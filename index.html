@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solo Leveling</title>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+    />
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!-- Update terminal HTML structure -->
+    <div class="terminal-container" id="terminal">
+      <div class="terminal-output" id="output"></div>
+      <div class="input-container">
+        <span class="terminal-prompt">
+          <span class="terminal-prompt-user">PLAYER</span>
+          <span class="terminal-prompt-separator">:</span>
+        </span>
+        <input
+          autocomplete="off"
+          type="text"
+          class="terminal-input"
+          id="input"
+          autofocus
+        />
+      </div>
+    </div>
+
+    <div style="z-index: 100000" class="notification" id="notification">
+      <div class="notification-content"></div>
+    </div>
+
+    <div class="status-bar">
+      <span>RANK: E</span>
+      <span>LEVEL: 1</span>
+      <span>EXP: 0/100</span>
+      <span>GOLD: 0</span>
+    </div>
+
+    <!-- Window Overlay -->
+    <div class="window-overlay" id="windowOverlay"></div>
+
+    <!-- Profile Window -->
+    <div class="window" id="profileWindow">
+      <div class="window-header">
+        <div class="window-title">Profile & Status</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Character Info</div>
+          <div class="window-grid">
+            <div class="window-item">
+              <div class="window-item-title">Name</div>
+              <div class="window-item-description" id="profileName">
+                Not set
+              </div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Title</div>
+              <div class="window-item-description" id="profileTitle">
+                Not set
+              </div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Class</div>
+              <div class="window-item-description" id="profileClass">
+                Not set
+              </div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Bio</div>
+              <div class="window-item-description" id="profileBio">Not set</div>
+            </div>
+          </div>
+        </div>
+        <div class="window-section">
+          <div class="window-section-title">Stats</div>
+          <div class="window-grid">
+            <div class="window-item">
+              <div class="window-item-title">Rank</div>
+              <div class="window-item-description" id="profileRank">E</div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Level</div>
+              <div class="window-item-description" id="profileLevel">1</div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Experience</div>
+              <div class="window-item-description" id="profileExp">0/100</div>
+              <div class="window-item-progress">
+                <div
+                  class="window-item-progress-bar"
+                  id="profileExpBar"
+                  style="width: 0%"
+                ></div>
+              </div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Gold</div>
+              <div class="window-item-description" id="profileGold">0</div>
+            </div>
+          </div>
+        </div>
+        <div class="window-section">
+          <div class="window-section-title">Progress</div>
+          <div class="window-grid">
+            <div class="window-item">
+              <div class="window-item-title">Quests Completed</div>
+              <div class="window-item-description" id="profileQuestsCompleted">
+                0
+              </div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Daily Streak</div>
+              <div class="window-item-description" id="profileStreak">
+                0 days
+              </div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Water Intake</div>
+              <div class="window-item-description" id="profileWaterIntake">
+                0/8 glasses
+              </div>
+              <div class="window-item-progress">
+                <div
+                  class="window-item-progress-bar"
+                  id="profileWaterBar"
+                  style="width: 0%"
+                ></div>
+              </div>
+              <div class="window-item-description" id="profileWaterStreak">
+                Streak: 0 days
+              </div>
+            </div>
+            <div class="window-item">
+              <div class="window-item-title">Member Since</div>
+              <div class="window-item-description" id="profileJoinDate">
+                Not set
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="justify-content: center" class="window-actions">
+          <button
+            style="display: none"
+            class="window-button"
+            onclick="showSetNamePrompt()"
+          >
+            Set Name
+          </button>
+          <button
+            style="display: none"
+            class="window-button"
+            onclick="showSetTitlePrompt()"
+          >
+            Set Title
+          </button>
+          <button class="window-button" onclick="showSetClassPrompt()">
+            Set Class
+          </button>
+          <button class="window-button" onclick="showSetBioPrompt()">
+            Set Bio
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quests Window -->
+    <div class="window" id="questsWindow">
+      <div class="window-header">
+        <div class="window-title">Active Quests</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Current Quests</div>
+          <div class="window-grid" id="activeQuestsList">
+            <!-- Quests will be dynamically added here -->
+          </div>
+        </div>
+        <div class="window-actions">
+          <button class="window-button" onclick="startQuestCreation('normal')">
+            Add New Quest
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Daily Quests Window -->
+    <div class="window" id="dailyQuestsWindow">
+      <div class="window-header">
+        <div class="window-title">Daily Quests</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Today's Quests</div>
+          <div class="window-grid" id="dailyQuestsList">
+            <!-- Daily quests will be dynamically added here -->
+          </div>
+        </div>
+        <div class="window-actions">
+          <button class="window-button" onclick="startQuestCreation('daily')">
+            Add Daily Quest
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Achievements Window -->
+    <div class="window" id="achievementsWindow">
+      <div class="window-header">
+        <div class="window-title">Achievements</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Unlocked Achievements</div>
+          <div class="window-grid" id="achievementsList">
+            <!-- Achievements will be dynamically added here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shop Window -->
+    <div class="window" id="shopWindow">
+      <div class="window-header">
+        <div class="window-title">Shop</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Available Items</div>
+          <div class="window-grid" id="shopItemsList">
+            <!-- Shop items will be dynamically added here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Inventory Window -->
+    <div class="window" id="inventoryWindow">
+      <div class="window-header">
+        <div class="window-title">Inventory</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Your Items</div>
+          <div class="window-grid" id="inventoryItemsList">
+            <!-- Inventory items will be dynamically added here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Boss Battles Window -->
+    <div class="window" id="BattleWindow">
+      <div class="window-header">
+        <div class="window-title">Boss Battles</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Available Bosses</div>
+          <div class="window-grid" id="bossBattlesList">
+            <!-- Boss battles will be dynamically added here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Leaderboard Window -->
+    <div class="window" id="leaderboardWindow">
+      <div class="window-header">
+        <div class="window-title">Leaderboard</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Top Players</div>
+          <div class="window-grid" id="leaderboardList">
+            <!-- Leaderboard entries will be dynamically added here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rank Progress Window -->
+    <div class="window" id="rankProgressWindow">
+      <div class="window-header">
+        <div class="window-title">Rank Progress</div>
+        <button class="window-close">&times;</button>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Current Progress</div>
+          <div class="window-grid" id="rankProgressContent">
+            <!-- Rank progress content will be dynamically added here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
+  </body>
+</html>
