@@ -784,8 +784,8 @@ async function initializeSystem() {
     // },
     {
       text: "Type !commands to view available protocols",
-      type: "system",
-      delay: 1800,
+      type: "info",
+      delay: 2200,
       speed: 0.1,
     },
   ];
@@ -5993,7 +5993,7 @@ window.addEventListener("load", function () {
       prompt.style.display = "block";
       setTimeout(() => (prompt.style.opacity = "1"), 100); // Smooth fade-in
     }
-  }, 5500);
+  }, 2500);
 });
 
 // Add bio prompt function
@@ -7552,18 +7552,12 @@ const speechRecognitionSystem = {
     if (!this.recognition) return;
 
     try {
-      if (this.isListening) {
-        console.log("Speech recognition is already running");
-        return;
-      }
-
       console.log("Starting speech recognition...");
       this.recognition.start();
       this.isListening = true;
       console.log("Speech recognition started successfully");
     } catch (error) {
       console.error("Error starting speech recognition:", error);
-      this.isListening = false;
     }
   },
 
@@ -7572,31 +7566,14 @@ const speechRecognitionSystem = {
 
     try {
       console.log("Restarting speech recognition...");
-
-      // First stop the recognition if it's running
-      if (this.isListening) {
-        this.recognition.stop();
-        this.isListening = false;
-      }
-
-      // Wait a moment before restarting
-      setTimeout(() => {
-        try {
-          this.recognition.start();
-          this.isListening = true;
-          console.log("Speech recognition restarted successfully");
-        } catch (error) {
-          console.error("Error in delayed recognition start:", error);
-          this.isListening = false;
-          // Try one more time after a longer delay if failed
-          setTimeout(() => this.startListening(), 2000);
-        }
-      }, 100);
+      this.isListening = false;
+      this.recognition.start();
+      this.isListening = true;
+      console.log("Speech recognition restarted successfully");
     } catch (error) {
       console.error("Error restarting speech recognition:", error);
-      this.isListening = false;
-      // Try again after a delay
-      setTimeout(() => this.startListening(), 2000);
+      // Try again after a short delay
+      setTimeout(() => this.startListening(), 1000);
     }
   },
 
@@ -7811,3 +7788,98 @@ speechRecognitionSystem.init = function () {
     }
   };
 };
+
+// Add touch event handling for windows
+function initializeTouchEvents() {
+  const windows = document.querySelectorAll(".window");
+  windows.forEach((window) => {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let initialX = 0;
+    let initialY = 0;
+
+    window.addEventListener("touchstart", (e) => {
+      if (
+        e.target.closest(".window-header") &&
+        !e.target.closest(".window-close")
+      ) {
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        initialX = window.offsetLeft;
+        initialY = window.offsetTop;
+      }
+    });
+
+    window.addEventListener("touchmove", (e) => {
+      if (touchStartX && touchStartY) {
+        e.preventDefault();
+        const touchX = e.touches[0].clientX;
+        const touchY = e.touches[0].clientY;
+        const deltaX = touchX - touchStartX;
+        const deltaY = touchY - touchStartY;
+
+        window.style.left = `${initialX + deltaX}px`;
+        window.style.top = `${initialY + deltaY}px`;
+      }
+    });
+
+    window.addEventListener("touchend", () => {
+      touchStartX = 0;
+      touchStartY = 0;
+    });
+  });
+}
+
+// Add double-tap prevention
+function preventDoubleTapZoom() {
+  let lastTouchEnd = 0;
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+    },
+    false
+  );
+}
+
+// Optimize scrolling performance
+function optimizeScrolling() {
+  const scrollableElements = document.querySelectorAll(
+    ".terminal-container, .window-content"
+  );
+  scrollableElements.forEach((element) => {
+    element.style.webkitOverflowScrolling = "touch";
+  });
+}
+
+// Update window initialization
+const originalWindowInit = windowSystem.init;
+windowSystem.init = function () {
+  originalWindowInit.call(this);
+  initializeTouchEvents();
+  preventDoubleTapZoom();
+  optimizeScrolling();
+
+  // Add orientation change handling
+  window.addEventListener("orientationchange", () => {
+    setTimeout(() => {
+      const windows = document.querySelectorAll(".window");
+      windows.forEach((window) => {
+        if (window.classList.contains("show")) {
+          const viewportHeight = window.innerHeight;
+          const windowHeight = window.offsetHeight;
+          if (windowHeight > viewportHeight * 0.9) {
+            window.style.height = "90vh";
+            window.style.top = "5vh";
+          }
+        }
+      });
+    }, 100);
+  });
+};
+
+// ... existing code ...

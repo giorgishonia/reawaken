@@ -361,7 +361,6 @@ body {
   padding: 20px;
   padding-left: 10px;
   padding-right: 5px;
-  min-width: 400px;
   max-width: 80vw;
   max-height: 80vh;
   overflow-y: auto;
@@ -1058,4 +1057,161 @@ body {
 .expired-item .window-button:hover {
   background: rgba(255, 71, 87, 0.2);
   transform: translateY(-2px);
+}
+
+/* Responsive Design */
+@media screen and (max-width: 768px) {
+  .terminal-container {
+    padding: 10px;
+    height: 100vh;
+  }
+
+  .input-container {
+    margin-bottom: 50px;
+  }
+
+  .terminal-output {
+    width: 88%;
+  }
+
+  .terminal-line {
+    font-size: 14px;
+  }
+
+  .terminal-input {
+    font-size: 14px;
+  }
+
+  .status-bar {
+    padding: 8px;
+    font-size: 12px;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  .notification {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    padding: 10px;
+    font-size: 14px;
+  }
+
+  .window {
+    max-width: none !important;
+    top: 5vh !important;
+    left: 2.5% !important;
+    height: min-content;
+    width: 80% !important;
+  }
+
+  .window-header {
+    padding: 8px;
+  }
+
+  .window-content {
+    padding: 10px;
+  }
+
+  .window-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px;
+  }
+
+  .window-taskbar {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 5px;
+  }
+
+  .taskbar-item {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  .window-section {
+    padding: 8px;
+  }
+
+  .window-button {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  .achievement-item {
+    padding: 10px;
+  }
+
+  .achievement-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+
+  .progress-input input {
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Improve touch targets */
+  .window-close,
+  .window-minimize,
+  .window-maximize {
+    padding: 8px;
+    margin: 2px;
+  }
+
+  /* Adjust scrollbars for touch devices */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+}
+
+/* Additional adjustments for very small screens */
+@media screen and (max-width: 480px) {
+  .terminal-line {
+    font-size: 13px;
+  }
+
+  .window-title {
+    font-size: 14px;
+  }
+
+  .window-item {
+    padding: 8px;
+  }
+
+  .window-item-title {
+    font-size: 14px;
+  }
+
+  .window-item-description {
+    font-size: 12px;
+  }
+
+  .status-bar {
+    font-size: 11px;
+  }
+}
+
+/* Ensure proper orientation handling */
+@media screen and (orientation: landscape) and (max-height: 500px) {
+  .window {
+    height: 85vh !important;
+    top: 7.5vh !important;
+  }
+
+  .terminal-container {
+    height: calc(100vh - 50px);
+  }
+}
+
+/* Fix for iOS Safari viewport height issues */
+@supports (-webkit-touch-callout: none) {
+  .terminal-container,
+  .window {
+    height: -webkit-fill-available !important;
+  }
 }
