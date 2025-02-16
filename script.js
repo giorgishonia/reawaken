@@ -7552,12 +7552,18 @@ const speechRecognitionSystem = {
     if (!this.recognition) return;
 
     try {
+      if (this.isListening) {
+        console.log("Speech recognition is already running");
+        return;
+      }
+
       console.log("Starting speech recognition...");
       this.recognition.start();
       this.isListening = true;
       console.log("Speech recognition started successfully");
     } catch (error) {
       console.error("Error starting speech recognition:", error);
+      this.isListening = false;
     }
   },
 
@@ -7566,14 +7572,31 @@ const speechRecognitionSystem = {
 
     try {
       console.log("Restarting speech recognition...");
-      this.isListening = false;
-      this.recognition.start();
-      this.isListening = true;
-      console.log("Speech recognition restarted successfully");
+
+      // First stop the recognition if it's running
+      if (this.isListening) {
+        this.recognition.stop();
+        this.isListening = false;
+      }
+
+      // Wait a moment before restarting
+      setTimeout(() => {
+        try {
+          this.recognition.start();
+          this.isListening = true;
+          console.log("Speech recognition restarted successfully");
+        } catch (error) {
+          console.error("Error in delayed recognition start:", error);
+          this.isListening = false;
+          // Try one more time after a longer delay if failed
+          setTimeout(() => this.startListening(), 2000);
+        }
+      }, 100);
     } catch (error) {
       console.error("Error restarting speech recognition:", error);
-      // Try again after a short delay
-      setTimeout(() => this.startListening(), 1000);
+      this.isListening = false;
+      // Try again after a delay
+      setTimeout(() => this.startListening(), 2000);
     }
   },
 
