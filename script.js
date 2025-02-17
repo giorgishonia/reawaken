@@ -209,7 +209,11 @@ const commands = {
   "!simulate": simulateQuestTimeout, // Add new command
   "!rank": handleRankCommand,
   "!rankprogress": showRankProgress,
+  "!penalty": handlePenaltyCommand,
 };
+
+// Add to command handlers
+commands["!penalty"] = handlePenaltyCommand;
 
 // Add these helper functions
 function showHelp(args) {
@@ -2122,7 +2126,7 @@ async function completeQuest(questId, type) {
         updates.level = firebase.firestore.FieldValue.increment(levelsToGain);
         updates.exp = remainingExp;
       } else {
-        updates.exp = firebase.firestore.FieldValue.increment(finalExpReward);
+          updates.exp = firebase.firestore.FieldValue.increment(finalExpReward);
       }
 
       // Update streak for daily quests
@@ -2566,7 +2570,7 @@ async function handleReset(args) {
   if (!awaitingResetConfirmation) {
     printToTerminal("⚠️ WARNING: This will reset your progress!", "warning");
     printToTerminal(
-      "Resetting: Level, EXP, Gold, Rank, Achievements, Streak, Title, Class, Water, Inventory, Items, Bosses, Quests.",
+      "Resetting: Level, EXP, Gold, Rank, Achievements, Streak, Title, Class, Bio, Water, Inventory, Items, Bosses, Quests, Notifications.",
       "warning"
     );
     printToTerminal(`\nTo confirm, type "${confirmationPhrase}"`, "warning");
@@ -2579,11 +2583,26 @@ async function handleReset(args) {
     try {
       const playerRef = db.collection("players").doc(currentUser.uid);
 
+      // Delete all notifications for the user
+      const notificationsSnapshot = await db.collection("notifications")
+        .where("userId", "==", currentUser.uid)
+        .get();
+      
+      const batch = db.batch();
+      notificationsSnapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+
       // Reset level, exp, gold, rank, achievements, streak, and quests count
       await playerRef.update({
         inventory: [],
-        title: "Novice",
-        class: "Hunter",
+        profile: {
+          ...playerStats.profile,
+          title: "Novice",
+          class: "Hunter",
+          bio: "",
+        },
         level: 1,
         exp: 0,
         gold: 0,
@@ -2608,6 +2627,9 @@ async function handleReset(args) {
       playerStats.achievements = [];
       playerStats.streak = 0;
       playerStats.questsCompleted = 0;
+      playerStats.profile.title = "Novice";
+      playerStats.profile.class = "Hunter";
+      playerStats.profile.bio = "";
       playerStats.workoutStreak = {
         current: 0,
         lastWorkout: null,
@@ -2621,15 +2643,21 @@ async function handleReset(args) {
       windowSystem.updateWindowContent("profileWindow");
       windowSystem.updateWindowContent("questsWindow");
       windowSystem.updateWindowContent("dailyQuestsWindow");
+      windowSystem.updateWindowContent("notificationsWindow");
+      windowSystem.updateNotificationBadge(0); // Reset notification badge count
 
       printToTerminal("Progress has been reset!", "success");
       printToTerminal("Level reset to 1", "info");
       printToTerminal("Experience reset to 0", "info");
       printToTerminal("Gold reset to 0", "info");
       printToTerminal("Rank reset to E", "info");
+      printToTerminal("Title reset to Novice", "info");
+      printToTerminal("Class reset to Hunter", "info");
+      printToTerminal("Bio cleared", "info");
       printToTerminal("Achievements progress reset", "info");
       printToTerminal("Workout streak reset to 0", "info");
       printToTerminal("Completed quests count reset to 0", "info");
+      printToTerminal("All notifications cleared", "info");
       showNotification("Progress has been reset!");
     } catch (error) {
       printToTerminal("Error resetting progress: " + error.message, "error");
@@ -4547,8 +4575,8 @@ const windowSystem = {
 
       // Set initial position if not set
       if (!window.style.top && !window.style.left) {
-        window.style.top = "50px";
-        window.style.left = "50px";
+        window.style.top = "10px";
+        window.style.left = "10px";
       }
 
       // Update window header
@@ -4590,6 +4618,11 @@ const windowSystem = {
         id: "leaderboardWindow",
         icon: "fa-trophy",
         title: "Leaderboard",
+      },
+      {
+        id: "notificationsWindow",
+        icon: "fa-bell",
+        title: "Notifications",
       },
     ];
 
@@ -4727,10 +4760,15 @@ const windowSystem = {
   },
 
   getTaskbarItem(windowId) {
-    const title =
-      this.windows[windowId].querySelector(".window-title").textContent;
+    const windowTitle = this.windows[windowId].querySelector(".window-title").textContent;
     return Array.from(document.querySelectorAll(".taskbar-item")).find(
-      (item) => item.title === title
+      (item) => {
+        // Handle special cases for Profile and Quests windows
+        if (windowId === "profileWindow" && item.title === "Profile") return true;
+        if (windowId === "questsWindow" && item.title === "Quests") return true;
+        // For other windows, check if the taskbar item title matches the window title
+        return item.title === windowTitle;
+      }
     );
   },
 
@@ -4760,6 +4798,9 @@ const windowSystem = {
         break;
       case "leaderboardWindow":
         await this.updateLeaderboardWindow();
+        break;
+      case "notificationsWindow":
+        await this.updateNotificationsWindow();
         break;
     }
   },
@@ -5726,11 +5767,10 @@ const windowSystem = {
       const leaderboardList = document.getElementById("leaderboardList");
       leaderboardList.innerHTML = "";
 
-      // Get all players sorted by level and exp
-      const playersSnapshot = await db.collection("players").get();
+      const snapshot = await db.collection("players").get();
       const players = [];
 
-      playersSnapshot.forEach((doc) => {
+      snapshot.forEach((doc) => {
         const player = doc.data();
         if (player.profile && player.profile.name) {
           players.push({
@@ -5754,52 +5794,222 @@ const windowSystem = {
       // Display top players
       players.forEach((player, index) => {
         const playerElement = document.createElement("div");
-        playerElement.className = "window-item leaderboard-entry";
+        let placeClass = "";
+        let medalIcon = "";
 
+        if (index === 0) {
+          placeClass = "top-3 first-place";
+          medalIcon = '<div class="place-medal">🥇</div>';
+        } else if (index === 1) {
+          placeClass = "top-3 second-place";
+          medalIcon = '<div class="place-medal">🥈</div>';
+        } else if (index === 2) {
+          placeClass = "top-3 third-place";
+          medalIcon = '<div class="place-medal">🥉</div>';
+        }
+
+        playerElement.className = `window-item leaderboard-entry ${placeClass}`;
         const nameStyle = player.nameColor ? `color: ${player.nameColor};` : "";
 
         playerElement.innerHTML = `
+          ${medalIcon}
           <div class="window-item-title">
-            #${index + 1}. <span style="${nameStyle}">${player.name}</span>
+            <span style="${nameStyle}">${player.name}</span>
           </div>
-          <div class="window-item-description">
-            Level ${player.level} | Rank ${player.rank}
-          </div>
-          <div class="window-item-description">
-            EXP: ${player.exp}
+          <div class="leaderboard-stats">
+            <div class="leaderboard-stat">
+              <span class="stat-label">Rank</span>
+              <span class="stat-value">${player.rank}</span>
+            </div>
+            <div class="leaderboard-stat">
+              <span class="stat-label">Level</span>
+              <span class="stat-value">${player.level}</span>
+            </div>
+            <div class="leaderboard-stat">
+              <span class="stat-label">EXP</span>
+              <span class="stat-value">${player.exp}</span>
+            </div>
           </div>
         `;
+
         leaderboardList.appendChild(playerElement);
       });
-
-      // Add CSS if not already present
-      if (!document.getElementById("leaderboardStyles")) {
-        const styleSheet = document.createElement("style");
-        styleSheet.id = "leaderboardStyles";
-        styleSheet.textContent = `
-          .leaderboard-entry {
-            border: 1px solid #0088ff;
-            margin-bottom: 8px;
-            padding: 10px;
-            border-radius: 4px;
-            background: rgba(0, 16, 32, 0.95);
-            transition: all 0.2s ease;
-          }
-          .leaderboard-entry:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 2px 8px rgba(0, 136, 255, 0.2);
-            border-color: #00ffff;
-          }
-          .leaderboard-entry .window-item-title {
-            font-size: 1.1em;
-            color: #fff;
-            text-shadow: 0 0 5px rgba(0, 255, 255, 0.3);
-          }
-        `;
-        document.head.appendChild(styleSheet);
-      }
     } catch (error) {
-      console.error("Error updating leaderboard window:", error);
+      console.error("Error updating leaderboard:", error);
+    }
+  },
+
+  async updateNotificationsWindow() {
+    if (!currentUser) return;
+    try {
+      const notificationsRef = db.collection("notifications")
+        .where("userId", "==", currentUser.uid)
+        .orderBy("timestamp", "desc");
+      
+      const snapshot = await notificationsRef.get();
+      const notificationsList = document.getElementById("notificationsList");
+      notificationsList.innerHTML = "";
+
+      // Add notification management buttons
+      const headerDiv = document.createElement("div");
+      headerDiv.className = "notifications-header";
+      headerDiv.innerHTML = `
+        <div class="notifications-actions">
+          <button class="notification-action-button" onclick="windowSystem.markAllNotificationsAsRead()">
+            <i class="fas fa-check-double"></i> Read All
+          </button>
+          <button class="notification-action-button delete" onclick="windowSystem.deleteAllNotifications()">
+            <i class="fas fa-trash"></i> Delete All
+          </button>
+        </div>
+      `;
+      notificationsList.appendChild(headerDiv);
+
+      if (snapshot.empty) {
+        notificationsList.innerHTML += '<div class="window-item">No notifications</div>';
+        return;
+      }
+
+      snapshot.forEach((doc) => {
+        const notification = doc.data();
+        const notificationElement = document.createElement("div");
+        notificationElement.className = `notification-item ${notification.type} ${notification.read ? 'read' : 'unread'}`;
+        notificationElement.dataset.notificationId = doc.id;
+
+        const timestamp = notification.timestamp.toDate();
+        const timeString = timestamp.toLocaleString();
+
+        let notificationContent = notification.message;
+        if (notification.type === "penalty") {
+          const details = notification.details;
+          notificationContent = `
+            <div class="notification-content">
+              <strong>${notification.message}</strong>
+              <div class="notification-details">
+                Failed Quests: ${details.incompleteQuests}/${details.totalQuests}<br>
+                XP Lost: ${details.expLost}<br>
+                ${details.levelsLost > 0 ? `Levels Lost: ${details.levelsLost}<br>` : ''}
+                Previous Level: ${details.previousLevel}<br>
+                New Level: ${details.newLevel}
+              </div>
+            </div>
+          `;
+        }
+
+        notificationElement.innerHTML = `
+          <div class="notification-time">
+            ${timeString}
+            <span class="notification-status">${notification.read ? 'Read' : 'Unread'}</span>
+          </div>
+          ${notificationContent}
+        `;
+
+        // Add click handler to mark as read
+        if (!notification.read) {
+          notificationElement.addEventListener('click', () => {
+            this.markNotificationAsRead(doc.id);
+          });
+        }
+
+        notificationsList.appendChild(notificationElement);
+      });
+
+      // Update notification badge
+      const unreadCount = await this.getUnreadNotificationsCount();
+      this.updateNotificationBadge(unreadCount);
+    } catch (error) {
+      console.error("Error updating notifications window:", error);
+    }
+  },
+
+  async markNotificationAsRead(notificationId) {
+    try {
+      await db.collection("notifications").doc(notificationId).update({
+        read: true
+      });
+      await this.updateNotificationsWindow();
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
+  },
+
+  async markAllNotificationsAsRead() {
+    try {
+      const batch = db.batch();
+      const notificationsRef = db.collection("notifications")
+        .where("userId", "==", currentUser.uid)
+        .where("read", "==", false);
+      
+      const snapshot = await notificationsRef.get();
+      
+      snapshot.forEach((doc) => {
+        batch.update(doc.ref, { read: true });
+      });
+      
+      await batch.commit();
+      await this.updateNotificationsWindow();
+      notificationSystem.show("All notifications marked as read", "success");
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+      notificationSystem.show("Error marking notifications as read", "error");
+    }
+  },
+
+  async deleteAllNotifications() {
+    try {
+      const batch = db.batch();
+      const notificationsRef = db.collection("notifications")
+        .where("userId", "==", currentUser.uid);
+      
+      const snapshot = await notificationsRef.get();
+      
+      snapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      
+      await batch.commit();
+      await this.updateNotificationsWindow();
+      notificationSystem.show("All notifications deleted", "success");
+    } catch (error) {
+      console.error("Error deleting all notifications:", error);
+      notificationSystem.show("Error deleting notifications", "error");
+    }
+  },
+
+  async getUnreadNotificationsCount() {
+    if (!currentUser) return 0;
+    try {
+      const unreadSnapshot = await db.collection("notifications")
+        .where("userId", "==", currentUser.uid)
+        .where("read", "==", false)
+        .get();
+      return unreadSnapshot.size;
+    } catch (error) {
+      console.error("Error getting unread notifications count:", error);
+      return 0;
+    }
+  },
+
+  updateNotificationBadge(count) {
+    const taskbarItem = this.getTaskbarItem("notificationsWindow");
+    if (taskbarItem) {
+      const existingBadge = taskbarItem.querySelector(".notification-badge");
+      if (count > 0) {
+        if (existingBadge) {
+          existingBadge.textContent = count;
+        } else {
+          const badge = document.createElement("div");
+          badge.className = "notification-badge";
+          badge.textContent = count;
+          taskbarItem.appendChild(badge);
+        }
+        taskbarItem.classList.add("has-notifications");
+      } else {
+        if (existingBadge) {
+          existingBadge.remove();
+        }
+        taskbarItem.classList.remove("has-notifications");
+      }
     }
   },
 };
@@ -6870,7 +7080,9 @@ async function updateBattleWindow() {
                      value="${activeBattle.currentCount}"
                      min="0"
                      max="${boss.targetCount}"
-                     onchange="updateBattleProgress(['${boss.id}', this.value])"
+                     onchange="updateBattleProgress(['${
+                       boss.id
+                     }', this.value])"
                      style="width: 80px; margin: 0 10px; background: transparent; color: var(--text-color); border: 1px solid var(--system-blue);">
                   /${boss.targetCount} ${boss.metric}
             </div>
@@ -7882,4 +8094,135 @@ windowSystem.init = function () {
   });
 };
 
-// ... existing code ...
+async function handlePenaltyCommand() {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+
+  try {
+    printToTerminal("\nChecking daily quests for penalties...", "system");
+    const now = firebase.firestore.Timestamp.now();
+    const yesterday = new Date(now.toMillis() - 24 * 60 * 60 * 1000);
+
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    const dailyQuestsSnapshot = await playerRef.collection("dailyQuests").get();
+
+    let incompleteQuests = 0;
+    const totalQuests = dailyQuestsSnapshot.size;
+    printToTerminal(`Found ${totalQuests} total daily quests`, "info");
+
+    dailyQuestsSnapshot.forEach((questDoc) => {
+      const quest = questDoc.data();
+      const lastCompletion = quest.lastCompletion ? quest.lastCompletion.toDate() : null;
+      
+      if (!quest.lastCompletion || quest.lastCompletion.toDate() < yesterday) {
+        incompleteQuests++;
+      }
+    });
+
+    printToTerminal(`Incomplete quests: ${incompleteQuests}/${totalQuests}`, "info");
+
+    if (totalQuests > 0 && incompleteQuests > 0) {
+      // Calculate penalty
+      const basePenalty = 50;
+      const incompletionRate = incompleteQuests / totalQuests;
+      let multiplier = 1;
+
+      if (incompletionRate > 0.5) multiplier = 1.5;
+      if (incompletionRate > 0.75) multiplier = 2;
+      if (incompletionRate === 1) multiplier = 2.5;
+
+      const penaltyAmount = Math.round(basePenalty * incompleteQuests * multiplier);
+
+      // Get current player stats
+      const playerDoc = await playerRef.get();
+      const player = playerDoc.data();
+      const currentExp = player.exp || 0;
+      const currentLevel = player.level || 1;
+
+      // Calculate new exp and level
+      let newExp = currentExp - penaltyAmount;
+      let newLevel = currentLevel;
+
+      // If exp goes negative, reduce levels
+      while (newExp < 0 && newLevel > 1) {
+        newLevel--;
+        newExp += getExpNeededForLevel(newLevel); // Use dynamic exp requirement instead of fixed value
+      }
+
+      // Ensure exp doesn't go below 0 at level 1
+      if (newLevel === 1 && newExp < 0) {
+        newExp = 0;
+      }
+
+      const levelsLost = currentLevel - newLevel;
+
+      // Update player stats
+      await playerRef.update({
+        exp: newExp,
+        level: newLevel,
+        lastPenalty: now,
+        lastPenaltyAmount: penaltyAmount,
+      });
+
+      // Create penalty log
+      await db.collection("penaltyLogs").add({
+        userId: currentUser.uid,
+        timestamp: now,
+        incompleteQuests,
+        totalQuests,
+        penaltyAmount,
+        previousExp: currentExp,
+        previousLevel: currentLevel,
+        newExp,
+        newLevel,
+        expLost: currentExp - newExp,
+        levelsLost,
+      });
+
+      // Create notification
+      await db.collection("notifications").add({
+        userId: currentUser.uid,
+        type: "penalty",
+        timestamp: now,
+        read: false,
+        message: `Daily Quest Penalty: Failed to complete ${incompleteQuests} out of ${totalQuests} quests. Lost ${penaltyAmount} XP${levelsLost > 0 ? ` and ${levelsLost} level${levelsLost > 1 ? 's' : ''}` : ''}.`,
+        details: {
+          incompleteQuests,
+          totalQuests,
+          penaltyAmount,
+          expLost: currentExp - newExp,
+          levelsLost,
+          previousLevel: currentLevel,
+          newLevel
+        }
+      });
+
+      printToTerminal("\n=== PENALTY APPLIED ===", "error");
+      printToTerminal(`Failed Quests: ${incompleteQuests}/${totalQuests}`, "error");
+      printToTerminal(`XP Lost: ${penaltyAmount}`, "error");
+      if (levelsLost > 0) {
+        printToTerminal(`Levels Lost: ${levelsLost}`, "error");
+      }
+      printToTerminal(`Previous Level: ${currentLevel}`, "info");
+      printToTerminal(`New Level: ${newLevel}`, "info");
+      printToTerminal(`Previous EXP: ${currentExp}`, "info");
+      printToTerminal(`New EXP: ${newExp}`, "info");
+
+      // Update UI
+      updateStatusBar();
+      windowSystem.updateWindowContent("profileWindow");
+      windowSystem.updateWindowContent("notificationsWindow");
+    } else {
+      printToTerminal("No penalties needed - all quests are complete!", "success");
+    }
+  } catch (error) {
+    console.error("Error in penalty command:", error);
+    printToTerminal("Error checking penalties: " + error.message, "error");
+  }
+}
+
+// Add to command handlers
+commandHandlers.penalty = handlePenaltyCommand;
+
