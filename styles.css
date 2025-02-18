@@ -359,6 +359,7 @@ body {
   border: 2px solid var(--system-blue);
   border-radius: 5px;
   padding: 20px;
+  padding-top: 0px;
   padding-bottom: 0px;
   padding-left: 10px;
   backdrop-filter: blur(4px);
@@ -381,10 +382,15 @@ body {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 15px;
+  padding-top: 15px;
+  z-index: 200;
+  background-color: #020d13;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--system-blue);
   cursor: move;
+  position: sticky;
   user-select: none;
+  top: 0;
 }
 
 .window-title {
@@ -481,10 +487,8 @@ body {
 
 .window-actions {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 10px;
   gap: 10px;
+  justify-content: flex-start;
 }
 
 .window-button {
@@ -503,12 +507,14 @@ body {
 }
 
 .window-button.danger {
-  border-color: var(--warning-red);
+  background: rgba(255, 71, 87, 0.1);
+  border: 1px solid var(--warning-red);
   color: var(--warning-red);
 }
 
 .window-button.danger:hover {
   background: rgba(255, 71, 87, 0.2);
+  transform: translateY(-2px);
 }
 
 /* Add window overlay */
@@ -1281,9 +1287,6 @@ body {
     width: 80% !important;
   }
 
-  .window-header {
-    padding: 8px;
-  }
   .window-grid {
     grid-template-columns: 1fr !important;
     gap: 10px;
@@ -1507,4 +1510,28 @@ body {
 
 .third-place .stat-value {
   color: #cd7f32;
+}
+
+.copyable-id {
+  cursor: pointer;
+  color: rgb(187, 187, 187);
+  text-decoration: underline;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.add-quest{
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+.copyable-id:hover {
+  background: rgba(0, 168, 255, 0.1);
+  text-decoration: none;
+}
+
+.copyable-id:active {
+  transform: scale(0.95);
+  background: rgba(0, 168, 255, 0.2);
 }
