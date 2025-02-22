@@ -19,7 +19,7 @@
       <div class="terminal-output" id="output"></div>
       <div class="input-container">
         <span class="terminal-prompt">
-          <span class="terminal-prompt-user">PLAYER</span>
+          <span id="terminal-prompt-user" class="terminal-prompt-user">PLAYER</span>
           <span class="terminal-prompt-separator">:</span>
         </span>
         <input
@@ -47,10 +47,7 @@
     <div id="notificationsWindow" class="window">
       <div class="window-header">
         <div class="window-title">Notifications</div>
-        <div class="window-controls">
-          <button class="window-minimize">-</button>
-          <button class="window-close">×</button>
-        </div>
+        <button class="window-close">×</button>
       </div>
       <div class="window-content">
         <div id="notificationsList" class="notifications-list"></div>
@@ -295,7 +292,7 @@
     </div>
 
     <!-- Boss Battles Window -->
-    <div class="window" id="BattleWindow">
+    <div class="window" id="bossBattlesWindow">
       <div class="window-header">
         <div class="window-title">Boss Battles</div>
         <div class="window-controls">
@@ -332,6 +329,25 @@
       </div>
     </div>
 
+    <!-- Shadow Army Window -->
+    <div class="window" id="shadowArmyWindow">
+      <div class="window-header">
+        <div class="window-title">Shadow Army</div>
+        <div class="window-controls">
+          <button class="window-minimize">-</button>
+          <button class="window-close">×</button>
+        </div>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div class="window-section-title">Your Shadow Soldiers</div>
+          <div class="window-grid" id="shadowArmyList">
+            <!-- Shadow army content will be dynamically added here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Rank Progress Window -->
     <div class="window" id="rankProgressWindow">
       <div class="window-header">
@@ -351,6 +367,8 @@
       </div>
     </div>
 
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
   </body>
 </html>
+
+

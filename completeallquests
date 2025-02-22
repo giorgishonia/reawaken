@@ -1,0 +1,419 @@
+
+async function completeAllQuests(type) {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+
+  try {
+    const questsRef = db
+      .collection("players")
+      .doc(currentUser.uid)
+      .collection(type === "daily" ? "dailyQuests" : "quests");
+
+    const snapshot = await questsRef.get();
+    if (snapshot.empty) {
+      printToTerminal(`No ${type} quests available.`, "warning");
+      return;
+    }
+
+    const batch = db.batch();
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    let completedQuestsCount = 0;
+
+    // First pass: count incomplete quests
+    snapshot.forEach((doc) => {
+      const quest = doc.data();
+      if (!quest.completed || (type === "daily" && !wasCompletedToday(quest.lastCompletion))) {
+        completedQuestsCount++;
+      }
+    });
+
+    if (completedQuestsCount === 0) {
+      printToTerminal(`All ${type} quests are already completed!`, "info");
+      return;
+    }
+
+    // Calculate total rewards with reduced values
+    const expPerQuest = type === "daily" ? 30 : 20;
+    const goldPerQuest = type === "daily" ? 15 : 10;
+    const totalExp = completedQuestsCount * expPerQuest;
+    const totalGold = completedQuestsCount * goldPerQuest;
+
+    // Second pass: mark all quests as completed
+    snapshot.forEach((doc) => {
+      const quest = doc.data();
+      if (!quest.completed || (type === "daily" && !wasCompletedToday(quest.lastCompletion))) {
+        batch.update(questsRef.doc(doc.id), {
+          completed: true,
+          currentCount: quest.targetCount,
+          lastCompletion: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    });
+
+    // Update player stats
+    batch.update(playerRef, {
+      exp: firebase.firestore.FieldValue.increment(totalExp),
+      gold: firebase.firestore.FieldValue.increment(totalGold),
+      questsCompleted: firebase.firestore.FieldValue.increment(completedQuestsCount),
+      ...(type === "daily" ? {
+        streak: firebase.firestore.FieldValue.increment(1),
+        lastDailyCompletion: firebase.firestore.FieldValue.serverTimestamp()
+      } : {})
+    });
+
+    await batch.commit();
+
+    // Print results
+    printToTerminal(`\n=== QUESTS COMPLETED ===`, "success");
+    printToTerminal(`Completed ${completedQuestsCount} ${type} quests!`, "success");
+    printToTerminal(`Total Rewards:`, "reward");
+    printToTerminal(`• ${totalExp} EXP (${expPerQuest} per quest)`, "reward");
+    printToTerminal(`• ${totalGold} Gold (${goldPerQuest} per quest)`, "reward");
+
+    // Update UI
+    updateStatusBar();
+    windowSystem.updateWindowContent(type === "daily" ? "dailyQuestsWindow" : "questsWindow");
+    windowSystem.updateWindowContent("profileWindow");
+
+    // Check for level ups and achievements
+    await checkLevelUp(playerRef, totalExp);
+    await checkAchievements();
+    await checkAndUpdateRank(playerRef, playerStats);
+
+  } catch (error) {
+    printToTerminal(`Error completing all quests: ${error.message}`, "error");
+    console.error("Error in completeAllQuests:", error);
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+//experiencepoints
+
+
+// Add this function before completeQuest
+async function addExperiencePoints(args) {
+    if (!isAuthenticated) {
+      printToTerminal("You must !reawaken first.", "error");
+      return;
+    }
+  
+    try {
+      const amount = parseInt(args[0]) || 0;
+      if (amount <= 0) {
+        printToTerminal("Please specify a valid amount of XP.", "error");
+        return;
+      }
+  
+      const playerRef = db.collection("players").doc(currentUser.uid);
+      const playerDoc = await playerRef.get();
+      const playerData = playerDoc.data();
+  
+      // Calculate XP boost from active items
+      const activeEffects = getActiveItemEffects(playerData.inventory);
+      const xpMultiplier = calculateTotalBoost("global_xp", activeEffects);
+      const boostedXP = Math.floor(amount * xpMultiplier);
+  
+      // Update local stats first for immediate feedback
+      playerStats.exp += boostedXP;
+      updateStatusBar(); // Update UI immediately
+  
+      // Update the player's XP in database
+      await playerRef.update({
+        exp: firebase.firestore.FieldValue.increment(boostedXP),
+      });
+  
+      if (xpMultiplier > 1) {
+        printToTerminal(
+          `Gained ${boostedXP} XP! (${amount} × ${xpMultiplier.toFixed(
+            2
+          )} boost)`,
+          "success"
+        );
+      } else {
+        printToTerminal(`Gained ${boostedXP} XP!`, "success");
+      }
+  
+      // Check for level up
+      await checkLevelUp(playerRef, playerStats.exp);
+    } catch (error) {
+      printToTerminal(
+        "Error adding experience points: " + error.message,
+        "error"
+      );
+    }
+  }
+
+  
+  async function sellItem(itemId) {
+    if (!isAuthenticated) {
+      printToTerminal("You must !reawaken first.", "error");
+      return;
+    }
+  
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    const playerDoc = await playerRef.get();
+    const playerData = playerDoc.data();
+  
+    // Find the item in the player's inventory
+    const inventoryItem = playerData.inventory.find((item) => item.id === itemId);
+    if (!inventoryItem) {
+      printToTerminal("Item not found in your inventory.", "error");
+      return;
+    }
+  
+    const item = Object.values(ITEMS).find((item) => item.id === itemId);
+    if (!item) {
+      printToTerminal("Invalid item.", "error");
+      return;
+    }
+  
+    // Play sell sound immediately
+    notificationSystem.playSound("sell");
+  
+    try {
+      const sellPrice = calculateSellPrice(item);
+  
+      // Remove item from inventory and add gold
+      await playerRef.update({
+        gold: firebase.firestore.FieldValue.increment(sellPrice),
+        inventory: firebase.firestore.FieldValue.arrayRemove(inventoryItem),
+      });
+  
+      // Update local stats
+      playerStats.gold += sellPrice;
+      playerStats.inventory = playerStats.inventory.filter(
+        (item) => item.id !== itemId
+      );
+  
+      printToTerminal(
+        `Sold ${item.name} for ${sellPrice} gold! (50% of original price)`,
+        "success"
+      );
+      showNotification(`Sold ${item.name} for ${sellPrice} gold!`);
+      updateStatusBar();
+      windowSystem.updateWindowContent("shopWindow");
+      windowSystem.updateWindowContent("inventoryWindow");
+    } catch (error) {
+      printToTerminal("Error selling item: " + error.message, "error");
+    }
+  }
+
+  
+
+
+
+
+
+
+
+
+
+
+
+  function checkRankProgress(player) {
+    const currentRank = player.rank || "E";
+    const nextRank = RANKS[RANKS.indexOf(currentRank) + 1];
+  
+    // If player is at max rank, return early
+    if (!nextRank) {
+      return {
+        currentRank,
+        nextRank: null,
+        progress: {
+          level: 100,
+          quests: 100,
+          achievements: 100,
+          overall: 100,
+        },
+      };
+    }
+  
+    // Get requirements for next rank
+    const nextRankReqs = RANK_REQUIREMENTS[nextRank];
+  
+    // Calculate progress percentages
+    const levelProgress = Math.min(
+      100,
+      ((player.level || 1) / nextRankReqs.level) * 100
+    );
+    const questProgress = Math.min(
+      100,
+      ((player.questsCompleted || 0) / nextRankReqs.quests) * 100
+    );
+    const achievementProgress = Math.min(
+      100,
+      ((player.achievements?.length || 0) / nextRankReqs.achievements) * 100
+    );
+    const overallProgress = Math.min(
+      100,
+      (levelProgress + questProgress + achievementProgress) / 3
+    );
+  
+    return {
+      currentRank,
+      nextRank,
+      progress: {
+        level: Math.round(levelProgress),
+        quests: Math.round(questProgress),
+        achievements: Math.round(achievementProgress),
+        overall: Math.round(overallProgress),
+      },
+      requirements: nextRankReqs,
+      currentValues: {
+        level: player.level || 1,
+        questsCompleted: player.questsCompleted || 0,
+        achievements: player.achievements?.length || 0,
+      },
+    };
+  }
+
+
+window.updateBattleWindow = async function() {
+    try {
+      if (!currentUser) return;
+      
+      const bossBattlesList = document.getElementById("bossBattlesList");
+      if (!bossBattlesList) {
+        console.error("Boss battles list element not found");
+        return;
+      }
+      
+      bossBattlesList.innerHTML = "";
+
+      // Get player's active battles and defeated bosses
+      const playerRef = db.collection("players").doc(currentUser.uid);
+      const playerDoc = await playerRef.get();
+      const player = playerDoc.data();
+      const defeatedBosses = player?.defeatedBosses || {};
+
+      const activeBattlesRef = playerRef.collection("activeBattles");
+      const activeBattles = await activeBattlesRef.get();
+      const activeBattleMap = new Map();
+
+      activeBattles.forEach((doc) => {
+        const battle = doc.data();
+        activeBattleMap.set(doc.id, battle);
+
+        // Check for timeout
+        const now = new Date();
+        const endTime = battle.endTime.toDate();
+        if (now > endTime) {
+          handleBossBattleTimeout(playerRef, doc.id, battle);
+          activeBattleMap.delete(doc.id);
+        }
+      });
+
+      // Add CSS styles if not present
+      if (!document.getElementById("bossBattleStyles")) {
+        const styleSheet = document.createElement("style");
+        styleSheet.id = "bossBattleStyles";
+        styleSheet.textContent = `
+          .defeat-count {
+            margin-left: 10px;
+            font-size: 0.9em;
+            color: #ff4444;
+          }
+          .active-battle-badge {
+            margin-left: 10px;
+            font-size: 0.9em;
+            color: #44ff44;
+          }
+          .battle-time-remaining {
+            font-size: 0.9em;
+            color: #ffff44;
+            margin: 5px 0;
+          }
+          .progress-input {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+          }
+          .progress-input input {
+            margin: 0 10px;
+            padding: 2px 5px;
+            width: 80px;
+            background: transparent;
+            color: var(--text-color);
+            border: 1px solid var(--system-blue);
+          }
+        `;
+        document.head.appendChild(styleSheet);
+      }
+
+      // Display available boss battles
+      Object.entries(BOSSES).forEach(([bossKey, boss]) => {
+        const defeatCount = defeatedBosses[boss.id] || 0;
+        const activeBattle = activeBattleMap.get(boss.id);
+        const bossElement = document.createElement("div");
+        bossElement.className = "window-item";
+
+        // Calculate scaled values
+        const scaledTarget = boss.baseTargetCount + (defeatCount * (boss.scaling?.targetCount || 0));
+        const scaledExp = boss.rewards.exp + (defeatCount * (boss.scaling?.rewards?.exp || 0));
+        const scaledGold = boss.rewards.gold + (defeatCount * (boss.scaling?.rewards?.gold || 0));
+
+        bossElement.innerHTML = `
+          <div class="window-item-title">
+            ${boss.name}
+            ${defeatCount > 0 ? `<span class="defeat-count">💀 ${defeatCount}</span>` : ""}
+            ${activeBattle ? '<span class="active-battle-badge">⚔️ In Progress</span>' : ""}
+          </div>
+          <div class="window-item-description">${boss.description}</div>
+          <div class="window-item-description">
+            Target: ${scaledTarget} ${boss.metric}
+            <br>Time Limit: ${formatTimeLimit(boss.timeLimit)}
+            ${defeatCount > 0 ? `<br>Scaling: +${boss.scaling?.targetCount || 0} ${boss.metric} per defeat` : ""}
+          </div>
+          <div class="window-item-description">
+            Rewards:
+            <br>- ${scaledExp} XP
+            <br>- ${scaledGold} Gold
+            ${boss.rewards.title ? `<br>- Title: ${boss.rewards.title}` : ""}
+          </div>
+          ${activeBattle ? `
+            <div class="window-item-progress">
+              <div class="progress-input">
+                <label>Current Progress:</label>
+                <input type="number" 
+                       value="${activeBattle.currentCount}"
+                       min="0"
+                       max="${activeBattle.targetCount}"
+                       onchange="updateBattleProgress(['${boss.id}', this.value])"
+                       style="width: 80px; margin: 0 10px; background: transparent; color: var(--text-color); border: 1px solid var(--system-blue);">
+                  /${activeBattle.targetCount} ${boss.metric}
+              </div>
+              <div class="battle-time-remaining" data-end-time="${activeBattle.endTime.toDate().toISOString()}" data-boss-id="${boss.id}">
+                Time Remaining: ${formatTimeRemaining(activeBattle.endTime.toDate() - new Date())}
+              </div>
+              <div class="window-item-progress-bar" style="width: ${(activeBattle.currentCount / activeBattle.targetCount) * 100}%"></div>
+            </div>
+          ` : ""}
+          <div class="window-actions">
+            <button class="window-button" 
+                    onclick="startBossBattle(['${boss.id}'])"
+                    ${activeBattle ? "disabled" : ""}>
+              ${activeBattle ? "Battle in Progress" : "Start Battle"}
+            </button>
+          </div>
+        `;
+
+        bossBattlesList.appendChild(bossElement);
+      });
+
+      // Start the battle timers
+      initializeTimers();
+    } catch (error) {
+      console.error("Error updating boss battles window:", error);
+    }
+  }

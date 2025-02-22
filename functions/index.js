@@ -120,6 +120,20 @@ exports.checkDailyQuestsPenalties = onSchedule(
   }
 );
 
+// First add the getExpNeededForLevel function
+function getExpNeededForLevel(level) {
+  if (level <= 10) {
+    return 100; // Base exp for levels 1-10
+  } else if (level <= 20) {
+    return 150; // Increased exp for levels 11-20
+  } else if (level <= 30) {
+    return 200; // Further increased for levels 21-30
+  } else {
+    // For levels 31+, use a formula that scales with level
+    return Math.floor(100 * Math.pow(1.1, level - 1));
+  }
+}
+
 /**
  * Applies penalty to a player and logs the action
  * @param {FirebaseFirestore.Firestore} db - Firestore instance
@@ -154,17 +168,17 @@ async function applyPenalty(
   // Calculate new exp and level after penalty
   let newExp = currentExp - penaltyAmount;
   let newLevel = currentLevel;
-  const expPerLevel = 100;
 
-  // If exp goes negative, reduce levels
-  while (newExp < 0 && newLevel > 1) {
+  // If exp goes below minimum (100), reduce levels if possible
+  while (newExp < 100 && newLevel > 1) {
     newLevel--;
-    newExp += expPerLevel;
+    // Add exp for the lost level
+    newExp += getExpNeededForLevel(newLevel);
   }
 
-  // Ensure exp doesn't go below 0 at level 1
-  if (newLevel === 1 && newExp < 0) {
-    newExp = 0;
+  // Final check to ensure exp never goes below 100
+  if (newExp < 100) {
+    newExp = 100;
   }
 
   console.log("New player stats after calculation:", {
