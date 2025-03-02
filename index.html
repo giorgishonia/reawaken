@@ -11,6 +11,9 @@
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore-compat.js"></script>
+
+
+
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -367,7 +370,75 @@
       </div>
     </div>
 
-    <script type="module" src="script.js"></script>
+    <div class="window" id="soloInterfaceWindow">
+      <div class="window-header">
+        <div class="window-title">SOLO Interface</div>
+        <div class="window-controls">
+          <button class="window-close" onclick="closeSoloInterface()">×</button>
+        </div>
+      </div>
+      <div class="window-content">
+        <div class="window-section">
+          <div id="soloContainer">
+            <div id="interface">
+              <div class="header">
+                <div class="logo">SOLO AI SYSTEM</div>
+                <div class="status">
+                  <div class="status-indicator">
+                    <div class="status-dot active" id="systemStatus"></div>
+                    <div class="status-label">SYSTEM ACTIVE</div>
+                  </div>
+                  <div class="status-indicator">
+                    <div class="status-dot inactive" id="listeningStatus"></div>
+                    <div class="status-label">VOICE INPUT</div>
+                  </div>
+                  <div class="status-indicator">
+                    <div class="status-dot inactive" id="processingStatus"></div>
+                    <div class="status-label">AI PROCESSING</div>
+                  </div>
+                </div>
+              </div>
+        
+              <div class="footer">
+                <div class="interaction-area">
+                  <div class="transcript-container">
+                    <div class="transcript" id="transcript"></div>
+                  </div>
+                  <div class="controls">
+                    <button class="control-btn" id="startListening">
+                      <i class="fas fa-microphone"></i> Start Listening
+                    </button>
+                    <button class="control-btn" id="stopListening" style="display: none;">
+                      <i class="fas fa-microphone-slash"></i> Stop Listening
+                    </button>
+                  </div>
+                  <div class="listening-indicator" id="listeningIndicator">
+                    Listening for your command...
+                  </div>
+                  <div class="thinking-indicator" id="thinkingIndicator">
+                    <span>Thinking</span>
+                    <div class="thinking-dots">
+                      <div class="thinking-dot"></div>
+                      <div class="thinking-dot"></div>
+                      <div class="thinking-dot"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>          
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplex-noise/2.4.0/simplex-noise.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/UnrealBloomPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/LuminosityHighPassShader.js"></script>
+    <script src="script.js"></script>    
   </body>
 </html>
 

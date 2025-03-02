@@ -1,4 +1,3 @@
-
 async function completeAllQuests(type) {
   if (!isAuthenticated) {
     printToTerminal("You must !reawaken first.", "error");
@@ -89,18 +88,6 @@ async function completeAllQuests(type) {
 }
 
 
-
-
-
-
-
-
-
-
-
-//experiencepoints
-
-
 // Add this function before completeQuest
 async function addExperiencePoints(args) {
     if (!isAuthenticated) {
@@ -153,9 +140,10 @@ async function addExperiencePoints(args) {
       );
     }
   }
+  
 
   
-  async function sellItem(itemId) {
+async function sellItem(itemId) {
     if (!isAuthenticated) {
       printToTerminal("You must !reawaken first.", "error");
       return;
@@ -209,19 +197,9 @@ async function addExperiencePoints(args) {
     }
   }
 
+
   
-
-
-
-
-
-
-
-
-
-
-
-  function checkRankProgress(player) {
+function checkRankProgress(player) {
     const currentRank = player.rank || "E";
     const nextRank = RANKS[RANKS.indexOf(currentRank) + 1];
   
@@ -277,143 +255,4 @@ async function addExperiencePoints(args) {
       },
     };
   }
-
-
-window.updateBattleWindow = async function() {
-    try {
-      if (!currentUser) return;
-      
-      const bossBattlesList = document.getElementById("bossBattlesList");
-      if (!bossBattlesList) {
-        console.error("Boss battles list element not found");
-        return;
-      }
-      
-      bossBattlesList.innerHTML = "";
-
-      // Get player's active battles and defeated bosses
-      const playerRef = db.collection("players").doc(currentUser.uid);
-      const playerDoc = await playerRef.get();
-      const player = playerDoc.data();
-      const defeatedBosses = player?.defeatedBosses || {};
-
-      const activeBattlesRef = playerRef.collection("activeBattles");
-      const activeBattles = await activeBattlesRef.get();
-      const activeBattleMap = new Map();
-
-      activeBattles.forEach((doc) => {
-        const battle = doc.data();
-        activeBattleMap.set(doc.id, battle);
-
-        // Check for timeout
-        const now = new Date();
-        const endTime = battle.endTime.toDate();
-        if (now > endTime) {
-          handleBossBattleTimeout(playerRef, doc.id, battle);
-          activeBattleMap.delete(doc.id);
-        }
-      });
-
-      // Add CSS styles if not present
-      if (!document.getElementById("bossBattleStyles")) {
-        const styleSheet = document.createElement("style");
-        styleSheet.id = "bossBattleStyles";
-        styleSheet.textContent = `
-          .defeat-count {
-            margin-left: 10px;
-            font-size: 0.9em;
-            color: #ff4444;
-          }
-          .active-battle-badge {
-            margin-left: 10px;
-            font-size: 0.9em;
-            color: #44ff44;
-          }
-          .battle-time-remaining {
-            font-size: 0.9em;
-            color: #ffff44;
-            margin: 5px 0;
-          }
-          .progress-input {
-            display: flex;
-            align-items: center;
-            margin: 10px 0;
-          }
-          .progress-input input {
-            margin: 0 10px;
-            padding: 2px 5px;
-            width: 80px;
-            background: transparent;
-            color: var(--text-color);
-            border: 1px solid var(--system-blue);
-          }
-        `;
-        document.head.appendChild(styleSheet);
-      }
-
-      // Display available boss battles
-      Object.entries(BOSSES).forEach(([bossKey, boss]) => {
-        const defeatCount = defeatedBosses[boss.id] || 0;
-        const activeBattle = activeBattleMap.get(boss.id);
-        const bossElement = document.createElement("div");
-        bossElement.className = "window-item";
-
-        // Calculate scaled values
-        const scaledTarget = boss.baseTargetCount + (defeatCount * (boss.scaling?.targetCount || 0));
-        const scaledExp = boss.rewards.exp + (defeatCount * (boss.scaling?.rewards?.exp || 0));
-        const scaledGold = boss.rewards.gold + (defeatCount * (boss.scaling?.rewards?.gold || 0));
-
-        bossElement.innerHTML = `
-          <div class="window-item-title">
-            ${boss.name}
-            ${defeatCount > 0 ? `<span class="defeat-count">💀 ${defeatCount}</span>` : ""}
-            ${activeBattle ? '<span class="active-battle-badge">⚔️ In Progress</span>' : ""}
-          </div>
-          <div class="window-item-description">${boss.description}</div>
-          <div class="window-item-description">
-            Target: ${scaledTarget} ${boss.metric}
-            <br>Time Limit: ${formatTimeLimit(boss.timeLimit)}
-            ${defeatCount > 0 ? `<br>Scaling: +${boss.scaling?.targetCount || 0} ${boss.metric} per defeat` : ""}
-          </div>
-          <div class="window-item-description">
-            Rewards:
-            <br>- ${scaledExp} XP
-            <br>- ${scaledGold} Gold
-            ${boss.rewards.title ? `<br>- Title: ${boss.rewards.title}` : ""}
-          </div>
-          ${activeBattle ? `
-            <div class="window-item-progress">
-              <div class="progress-input">
-                <label>Current Progress:</label>
-                <input type="number" 
-                       value="${activeBattle.currentCount}"
-                       min="0"
-                       max="${activeBattle.targetCount}"
-                       onchange="updateBattleProgress(['${boss.id}', this.value])"
-                       style="width: 80px; margin: 0 10px; background: transparent; color: var(--text-color); border: 1px solid var(--system-blue);">
-                  /${activeBattle.targetCount} ${boss.metric}
-              </div>
-              <div class="battle-time-remaining" data-end-time="${activeBattle.endTime.toDate().toISOString()}" data-boss-id="${boss.id}">
-                Time Remaining: ${formatTimeRemaining(activeBattle.endTime.toDate() - new Date())}
-              </div>
-              <div class="window-item-progress-bar" style="width: ${(activeBattle.currentCount / activeBattle.targetCount) * 100}%"></div>
-            </div>
-          ` : ""}
-          <div class="window-actions">
-            <button class="window-button" 
-                    onclick="startBossBattle(['${boss.id}'])"
-                    ${activeBattle ? "disabled" : ""}>
-              ${activeBattle ? "Battle in Progress" : "Start Battle"}
-            </button>
-          </div>
-        `;
-
-        bossBattlesList.appendChild(bossElement);
-      });
-
-      // Start the battle timers
-      initializeTimers();
-    } catch (error) {
-      console.error("Error updating boss battles window:", error);
-    }
-  }
+  

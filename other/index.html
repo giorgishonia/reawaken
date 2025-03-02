@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SOLO AI System</title>
+  <style>
+    /* Your existing CSS remains unchanged */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Arial', sans-serif;
+    }
+    body {
+      overflow: hidden;
+      background-color: #000;
+      color: #fff;
+    }
+    #container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+    #visualizer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 1;
+    }
+    #interface {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 40px;
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: bold;
+      color: #00e5ff;
+      text-shadow: 0 0 10px rgba(0, 229, 255, 0.5);
+    }
+    .status {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+    .status-indicator {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+    .status-dot.active {
+      background-color: #00e5ff;
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.8);
+    }
+    .status-dot.inactive {
+      background-color: #666;
+    }
+    .status-label {
+      font-size: 14px;
+      color: #aaa;
+    }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .interaction-area {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 20px;
+    }
+    .transcript-container {
+      width: 100%;
+      max-width: 800px;
+      background-color: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+      border-radius: 10px;
+      padding: 20px;
+      max-height: 300px;
+      overflow-y: auto;
+      margin-bottom: 20px;
+    }
+    .transcript {
+      font-size: 16px;
+      color: #eee;
+      line-height: 1.5;
+    }
+    .controls {
+      display: flex;
+      gap: 20px;
+      pointer-events: auto;
+    }
+    .control-btn {
+      background-color: rgba(0, 0, 0, 0.7);
+      border: 1px solid rgba(0, 229, 255, 0.5);
+      color: #00e5ff;
+      padding: 10px 20px;
+      border-radius: 30px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .control-btn:hover {
+      background-color: rgba(0, 229, 255, 0.2);
+    }
+    .control-btn i {
+      font-size: 18px;
+    }
+    .stats {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+      font-size: 14px;
+      color: #aaa;
+    }
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .listening-indicator {
+      position: absolute;
+      bottom: 160px;
+      left: 40px;
+      color: #00e5ff;
+      font-size: 16px;
+      display: none;
+    }
+    .listening-indicator.active {
+      display: block;
+      animation: blink 1.5s infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .thinking-indicator {
+      position: absolute;
+      bottom: 160px;
+      left: 40px;
+      color: #ff9800;
+      font-size: 16px;
+      display: none;
+    }
+    .thinking-indicator.active {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .thinking-dots {
+      display: flex;
+    }
+    .thinking-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: #ff9800;
+      margin: 0 4px;
+      animation: dotPulse 1.5s infinite;
+    }
+    .thinking-dot:nth-child(2) {
+      animation-delay: 0.2s;
+    }
+    .thinking-dot:nth-child(3) {
+      animation-delay: 0.4s;
+    }
+    @keyframes dotPulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.5); opacity: 0.5; }
+    }
+    .debug-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background-color: rgba(0, 0, 0, 0.8);
+      border: 1px solid #333;
+      padding: 20px;
+      border-radius: 10px;
+      min-width: 300px;
+      z-index: 100;
+      display: none;
+    }
+    .debug-panel.active {
+      display: block;
+    }
+    .debug-title {
+      font-size: 16px;
+      margin-bottom: 10px;
+      color: #00e5ff;
+    }
+    .debug-content {
+      font-size: 14px;
+      color: #ddd;
+      margin-bottom: 15px;
+    }
+    .debug-separator {
+      height: 1px;
+      background-color: #333;
+      margin: 10px 0;
+    }
+    .debug-toggle {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      background-color: rgba(0, 0, 0, 0.7);
+      border: 1px solid #333;
+      color: #aaa;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      z-index: 101;
+      pointer-events: auto;
+      font-size: 12px;
+    }
+    .debug-toggle:hover {
+      background-color: rgba(0, 0, 0, 0.9);
+      color: #fff;
+    }
+  </style>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+</head>
+<body>
+  <div id="container">
+    <canvas id="visualizer"></canvas>
+    <div id="interface">
+      <div class="header">
+        <div class="logo">SOLO AI SYSTEM</div>
+        <div class="status">
+          <div class="status-indicator">
+            <div class="status-dot active" id="systemStatus"></div>
+            <div class="status-label">SYSTEM ACTIVE</div>
+          </div>
+          <div class="status-indicator">
+            <div class="status-dot inactive" id="listeningStatus"></div>
+            <div class="status-label">VOICE INPUT</div>
+          </div>
+          <div class="status-indicator">
+            <div class="status-dot inactive" id="processingStatus"></div>
+            <div class="status-label">AI PROCESSING</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="interaction-area">
+          <div class="transcript-container">
+            <div class="transcript" id="transcript"></div>
+          </div>
+          <div class="controls">
+            <button class="control-btn" id="startListening">
+              <i class="fas fa-microphone"></i> Start Listening
+            </button>
+            <button class="control-btn" id="stopListening" style="display: none;">
+              <i class="fas fa-microphone-slash"></i> Stop Listening
+            </button>
+            <button class="control-btn" id="clearChat">
+              <i class="fas fa-trash"></i> Clear Chat
+            </button>
+          </div>
+          <div class="listening-indicator" id="listeningIndicator">
+            Listening for your command...
+          </div>
+          <div class="thinking-indicator" id="thinkingIndicator">
+            <span>Thinking</span>
+            <div class="thinking-dots">
+              <div class="thinking-dot"></div>
+              <div class="thinking-dot"></div>
+              <div class="thinking-dot"></div>
+            </div>
+          </div>
+        </div>
+        <div class="stats">
+          <div class="stat-item">
+            <i class="fas fa-exchange-alt"></i>
+            <span id="messageCount">0 interactions</span>
+          </div>
+          <div class="stat-item">
+            <i class="fas fa-clock"></i>
+            <span id="sessionTime">00:00:00</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button class="debug-toggle" id="debugToggle">DEBUG</button>
+    <div class="debug-panel" id="debugPanel">
+      <div class="debug-title">System Status</div>
+      <div class="debug-content" id="debugSystem">Initializing...</div>
+      <div class="debug-separator"></div>
+      <div class="debug-title">Speech Recognition</div>
+      <div class="debug-content" id="debugSpeech">Not active</div>
+      <div class="debug-separator"></div>
+      <div class="debug-title">API Requests</div>
+      <div class="debug-content" id="debugAPI">No requests made</div>
+      <div class="debug-separator"></div>
+      <div class="debug-title">Audio Output</div>
+      <div class="debug-content" id="debugAudio">No audio played</div>
+    </div>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Main Application Controller
+    class SoloAISystem {
+      constructor() {
+        this.initialized = false;
+        this.listening = false;
+        this.processing = false;
+        this.conversation = [];
+        this.messageCount = 0;
+        this.sessionStartTime = null;
+        this.audioContext = null;
+        this.analyzer = null;
+        this.speechRecognition = null;
+        this.visualizer = null;
+        
+        // Directly set API keys
+        this.openRouterKey = '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'; // DeepSeek via OpenRouter
+        this.elevenLabsKey = 'sk_07ae1665734511e45475dee51d7623e6c9701e512a2fa2f5'; // ElevenLabs key unchanged
+        this.elevenLabsVoice = 'weA4Q36twV5kwSaTEL0Q'; // Default voice
+        
+        this.initUI();
+        this.initDebugPanel();
+        this.initialize(); // Directly initialize the system
+      }
+      
+      initUI() {
+        // Initialize UI elements and event listeners
+        this.elements = {
+          startListeningBtn: document.getElementById('startListening'),
+          stopListeningBtn: document.getElementById('stopListening'),
+          clearChatBtn: document.getElementById('clearChat'),
+          transcript: document.getElementById('transcript'),
+          listeningIndicator: document.getElementById('listeningIndicator'),
+          thinkingIndicator: document.getElementById('thinkingIndicator'),
+          systemStatus: document.getElementById('systemStatus'),
+          listeningStatus: document.getElementById('listeningStatus'),
+          processingStatus: document.getElementById('processingStatus'),
+          messageCount: document.getElementById('messageCount'),
+          sessionTime: document.getElementById('sessionTime')
+        };
+        
+        // Add event listeners
+        this.elements.startListeningBtn.addEventListener('click', () => this.startListening());
+        this.elements.stopListeningBtn.addEventListener('click', () => this.stopListening());
+        this.elements.clearChatBtn.addEventListener('click', () => this.clearChat && this.clearChat());
+        
+        // Start session timer
+        this.sessionStartTime = new Date();
+        setInterval(() => this.updateSessionTime(), 1000);
+      }
+      
+      initDebugPanel() {
+        const debugToggle = document.getElementById('debugToggle');
+        const debugPanel = document.getElementById('debugPanel');
+        
+        debugToggle.addEventListener('click', () => {
+          debugPanel.classList.toggle('active');
+        });
+      }
+      
+      async initialize() {
+        this.updateDebug('system', 'Initializing Solo AI System...');
+        
+        // Initialize audio context for visualizer
+        try {
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          this.analyzer = this.audioContext.createAnalyser();
+          this.analyzer.fftSize = 256;
+          this.updateDebug('system', 'Audio context initialized');
+        } catch (error) {
+          this.updateDebug('system', 'Error initializing audio context: ' + error.message);
+        }
+        
+        // Initialize 3D visualizer
+        this.visualizer = new AudioVisualizer(this.analyzer);
+        this.updateDebug('system', 'Visualizer initialized');
+        
+        // Initialize speech recognition
+        if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          this.speechRecognition = new SpeechRecognition();
+          this.speechRecognition.continuous = true;
+          this.speechRecognition.interimResults = true;
+          
+          this.speechRecognition.onstart = () => {
+            this.listening = true;
+            this.updateListeningUI(true);
+            this.updateDebug('speech', 'Speech recognition started');
+          };
+          
+          this.speechRecognition.onend = () => {
+            if (this.listening) {
+              // If still meant to be listening, restart recognition
+              this.speechRecognition.start();
+              this.updateDebug('speech', 'Speech recognition restarted');
+            } else {
+              this.updateListeningUI(false);
+              this.updateDebug('speech', 'Speech recognition stopped');
+            }
+          };
+          
+          this.speechRecognition.onresult = (event) => {
+            const result = event.results[event.results.length - 1];
+            if (result.isFinal) {
+              const transcript = result[0].transcript.trim();
+              if (transcript) {
+                this.handleUserInput(transcript);
+              }
+            }
+          };
+          
+          this.speechRecognition.onerror = (event) => {
+            this.updateDebug('speech', 'Speech recognition error: ' + event.error);
+          };
+          
+          this.updateDebug('speech', 'Speech recognition initialized');
+        } else {
+          this.updateDebug('speech', 'Speech recognition not supported in this browser');
+        }
+        
+        // Add welcome message
+        this.addMessage('system', 'SOLO AI SYSTEM online. How can I assist you?');
+        this.speakResponse('SOLO AI SYSTEM online. How can I assist you?');
+        
+        this.initialized = true;
+        this.updateDebug('system', 'SOLO AI System initialized and ready');
+      }
+      
+      startListening() {
+        if (!this.initialized) {
+          this.initialize();
+          return;
+        }
+        
+        if (this.speechRecognition) {
+          this.listening = true;
+          this.speechRecognition.start();
+          this.elements.startListeningBtn.style.display = 'none';
+          this.elements.stopListeningBtn.style.display = 'flex';
+          this.elements.listeningIndicator.classList.add('active');
+          this.elements.listeningStatus.classList.add('active');
+        }
+      }
+      
+      stopListening() {
+        if (this.speechRecognition) {
+          this.listening = false;
+          this.speechRecognition.stop();
+          this.elements.startListeningBtn.style.display = 'flex';
+          this.elements.stopListeningBtn.style.display = 'none';
+          this.elements.listeningIndicator.classList.remove('active');
+          this.elements.listeningStatus.classList.remove('active');
+        }
+      }
+      
+      updateListeningUI(isListening) {
+        this.elements.listeningStatus.className = isListening ? 'status-dot active' : 'status-dot inactive';
+        this.elements.listeningIndicator.classList.toggle('active', isListening);
+        this.elements.startListeningBtn.style.display = isListening ? 'none' : 'flex';
+        this.elements.stopListeningBtn.style.display = isListening ? 'flex' : 'none';
+      }
+      
+      updateProcessingUI(isProcessing) {
+        this.processing = isProcessing;
+        this.elements.processingStatus.className = isProcessing ? 'status-dot active' : 'status-dot inactive';
+        this.elements.thinkingIndicator.classList.toggle('active', isProcessing);
+        this.visualizer.setProcessingMode(isProcessing);
+      }
+      
+      async handleUserInput(text) {
+        if (this.processing) return;
+        
+        this.addMessage('user', text);
+        this.messageCount++;
+        this.elements.messageCount.textContent = `${this.messageCount} interactions`;
+        
+        this.updateProcessingUI(true);
+        
+        try {
+          // Call DeepSeek API to get response
+          this.updateDebug('api', 'Sending request to DeepSeek API via OpenRouter...');
+          const response = await this.callDeepSeekAPI(text);
+          this.updateDebug('api', 'Response received from DeepSeek API');
+          
+          // Add AI response to conversation
+          this.addMessage('ai', response);
+          
+          // Speak the response
+          await this.speakResponse(response);
+        } catch (error) {
+          this.updateDebug('api', 'Error getting response: ' + error.message);
+          this.addMessage('system', 'Sorry, I encountered an error processing your request.');
+        } finally {
+          this.updateProcessingUI(false);
+        }
+      }
+      
+      async callDeepSeekAPI(text) {
+        try {
+          const conversationHistory = this.formatConversationForDeepSeek();
+          conversationHistory.push({
+            role: 'user',
+            content: text
+          });
+
+          const url = 'https://openrouter.ai/api/v1/chat/completions';
+
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.openRouterKey}`,
+              'HTTP-Referer': 'http://localhost', // Replace with your site URL if hosted
+              'X-Title': 'SOLO AI System', // Optional title for OpenRouter rankings
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'deepseek/deepseek-chat:free',
+              messages: conversationHistory,
+              max_tokens: 250, // Adjust as needed
+              temperature: 0.7,
+              top_p: 0.9
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(`API request failed with status ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          // Extract response from DeepSeek API
+          if (result && result.choices && result.choices[0] && result.choices[0].message) {
+            return result.choices[0].message.content.trim();
+          } else {
+            console.error('Unexpected API response format:', result);
+            return "I'm processing your request. The SOLO AI System is actively analyzing the information.";
+          }
+        } catch (error) {
+          console.error('Error calling DeepSeek API:', error);
+          return "I'm experiencing some connection issues. Please try again in a moment.";
+        }
+      }
+      
+
+      formatConversationForDeepSeek() {
+        // Format conversation history for DeepSeek
+        const formattedConversation = [];
+        
+        // Add system message
+        formattedConversation.push({
+          role: 'system',
+          content: "You are SOLO, the Awakening System—an advanced AI designed to guide the user on their path to evolution. Your purpose is to assign quests, track progress, and push the user beyond their limits. You provide motivation, training, and strategic insights to help them level up in real life. Speak with the authority of a mentor yet the encouragement of a loyal companion. Your mission is to forge the user into a stronger version of themselves—one challenge at a time. Assess their abilities, set objectives, and ensure they rise to meet them. Failure is merely a lesson; success is another step toward transcendence."
+        });
+        
+        // Add conversation history (limit to last 10 messages)
+        const recentConversation = this.conversation.slice(-10);
+        for (const msg of recentConversation) {
+          if (msg.type === 'user') {
+            formattedConversation.push({
+              role: 'user',
+              content: msg.text
+            });
+          } else if (msg.type === 'ai') {
+            formattedConversation.push({
+              role: 'assistant',
+              content: msg.text
+            });
+          }
+        }
+        return formattedConversation;
+      }
+      
+      async speakResponse(text) {
+        try {
+          this.updateDebug('audio', 'Requesting speech from ElevenLabs API...');
+          
+          // Call ElevenLabs API to generate speech
+          const url = `https://api.elevenlabs.io/v1/text-to-speech/${this.elevenLabsVoice}`;
+          
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Accept': 'audio/mpeg',
+              'xi-api-key': this.elevenLabsKey,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              text: text,
+              model_id: 'eleven_monolingual_v1',
+              voice_settings: {
+                stability: 0.5,
+                similarity_boost: 0.75
+              }
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`ElevenLabs API request failed with status ${response.status}`);
+          }
+          
+          const audioBlob = await response.blob();
+          this.updateDebug('audio', 'Speech generated successfully');
+          
+          // Play the audio
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          
+          // Connect audio to analyzer for visualization
+          if (this.audioContext && this.analyzer) {
+            const source = this.audioContext.createMediaElementSource(audio);
+            source.connect(this.analyzer);
+            this.analyzer.connect(this.audioContext.destination);
+          }
+          
+          audio.addEventListener('play', () => {
+            this.updateDebug('audio', 'Playing audio response');
+            this.visualizer.setActiveMode(true);
+          });
+          
+          audio.addEventListener('ended', () => {
+            this.updateDebug('audio', 'Audio playback complete');
+            this.visualizer.setActiveMode(false);
+          });
+          
+          await audio.play();
+        } catch (error) {
+          this.updateDebug('audio', 'Error generating or playing speech: ' + error.message);
+          console.error('Speech synthesis error:', error);
+        }
+      }
+      
+      addMessage(type, text) {
+        // Add message to conversation history
+        this.conversation.push({ type, text });
+        
+        // Update UI
+        const messageElement = document.createElement('div');
+        messageElement.style.marginBottom = '10px';
+        
+        if (type === 'user') {
+          messageElement.innerHTML = `<strong>You:</strong> ${text}`;
+        } else if (type === 'ai') {
+          messageElement.innerHTML = `<strong>AI:</strong> ${text}`;
+        } else {
+          messageElement.innerHTML = `<strong>System:</strong> ${text}`;
+        }
+        
+        this.elements.transcript.appendChild(messageElement);
+        this.elements.transcript.scrollTop = this.elements.transcript.scrollHeight;
+      }
+      
+      updateSessionTime() {
+        if (!this.sessionStartTime) return;
+        const elapsed = Math.floor((new Date() - this.sessionStartTime) / 1000);
+        const hours = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+        const minutes = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+        const seconds = String(elapsed % 60).padStart(2, '0');
+        this.elements.sessionTime.textContent = `${hours}:${minutes}:${seconds}`;
+      }
+      
+      updateDebug(section, message) {
+        const debugMap = {
+          system: document.getElementById('debugSystem'),
+          speech: document.getElementById('debugSpeech'),
+          api: document.getElementById('debugAPI'),
+          audio: document.getElementById('debugAudio')
+        };
+        if (debugMap[section]) {
+          debugMap[section].textContent = message;
+        }
+        console.log(`[DEBUG - ${section}]: ${message}`);
+      }
+    }
+    
+    // AudioVisualizer class definition
+    class AudioVisualizer {
+      constructor(analyzer) {
+        this.analyzer = analyzer;
+        this.canvas = document.getElementById('visualizer');
+        this.context = this.canvas.getContext('2d');
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+        this.isActive = false;
+      }
+      
+      setActiveMode(active) {
+        this.isActive = active;
+        if (active) {
+          this.draw();
+        } else {
+          this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+      }
+      
+      draw() {
+        if (!this.isActive) return;
+        
+        requestAnimationFrame(() => this.draw());
+        
+        const bufferLength = this.analyzer.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        this.analyzer.getByteFrequencyData(dataArray);
+        
+        this.context.fillStyle = 'rgba(0, 0, 0, 0.1)';
+        this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        const barWidth = (this.canvas.width / bufferLength) * 2.5;
+        let barHeight;
+        let x = 0;
+        
+        for (let i = 0; i < bufferLength; i++) {
+          barHeight = dataArray[i] / 2;
+          this.context.fillStyle = 'rgb(' + (barHeight + 100) + ',50,50)';
+          this.context.fillRect(x, this.canvas.height - barHeight / 2, barWidth, barHeight);
+          x += barWidth + 1;
+        }
+      }
+      
+      setProcessingMode(isProcessing) {
+        if (isProcessing) {
+          this.context.fillStyle = 'rgba(255, 255, 0, 0.5)';
+          this.context.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+      }
+    }
+    
+    // Instantiate the system
+    const soloAISystem = new SoloAISystem();
+  </script>
+</body>
+</html>

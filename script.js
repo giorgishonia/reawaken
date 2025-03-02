@@ -1,6 +1,3 @@
-import { BOSSES } from "./js/bosses.js";
-
-
 // Initialize Firebase
 const firebaseConfig = {
   apiKey: "AIzaSyAEpfs-P81k4vagCAPlrW_qOXEysllMjGg",
@@ -275,13 +272,7 @@ async function showShop() {
     printToTerminal("You must !reawaken first.", "error");
     return;
   }
-
-  printToTerminal("=== SHOP ===", "info");
-  Object.values(ITEMS).forEach((item) => {
-    printToTerminal(`${item.name} - ${item.price} gold`, "info");
-    printToTerminal(`Description: ${item.description}`, "system");
-    printToTerminal("---", "system");
-  });
+  windowSystem.showWindow("shopWindow");
 }
 
 async function showQuestIds() {
@@ -352,220 +343,6 @@ function showNotificationsWindow() {
   windowSystem.showWindow("notificationsWindow");
 }
 
-window.startBossBattle = async function(args) {
-  if (!isAuthenticated) {
-    printToTerminal("You must !reawaken first.", "error");
-    return;
-  }
-
-  if (!args || args.length === 0) {
-    printToTerminal("Usage: !challenge <boss_id>", "warning");
-    printToTerminal("Example: !challenge step_master", "info");
-    return;
-  }
-
-  const bossId = args[0];
-  const boss = Object.values(BOSSES).find((b) => b.id === bossId);
-  if (!boss) {
-    printToTerminal("Invalid boss battle ID.", "error");
-    return;
-  }
-
-  try {
-    const playerRef = db.collection("players").doc(currentUser.uid);
-    const player = (await playerRef.get()).data();
-
-    // Check if player meets the rank requirement
-    if (!isRankSufficient(player.rank, boss.requiredRank)) {
-      printToTerminal(
-        `You need to be rank ${boss.requiredRank} or higher to challenge this boss.`,
-        "error"
-      );
-      return;
-    }
-
-    // Check if player already has an active battle with this boss
-    const activeBattleRef = playerRef.collection("activeBattles").doc(bossId);
-    const activeBattle = await activeBattleRef.get();
-
-    if (activeBattle.exists) {
-      printToTerminal("You are already battling this boss!", "error");
-      return;
-    }
-
-    // Create new battle
-    const battleData = {
-      bossId: boss.id,
-      bossName: boss.name,
-      targetCount: boss.targetCount,
-      currentCount: 0,
-      timeLimit: boss.timeLimit,
-      startTime: Date.now(),
-      rewards: boss.rewards,
-    };
-
-    await activeBattleRef.set(battleData);
-
-    // Set up timer for battle expiration
-    const timerId = `boss_battle_${bossId}`;
-    timerSystem.startTimer(timerId, async () => {
-      const battle = (await activeBattleRef.get()).data();
-      if (battle && battle.currentCount < battle.targetCount) {
-        await handleBossBattleTimeout(playerRef, bossId, battle);
-      }
-    }, battleData.timeLimit);
-
-    // Show battle start message
-    printToTerminal(
-      `\n🗡️ Boss Battle Started: ${boss.name}`,
-      "success"
-    );
-    printToTerminal(
-      `Complete ${boss.targetCount} ${boss.actionType} in ${formatTimeLimit(
-        boss.timeLimit
-      )}!`,
-      "info"
-    );
-    printToTerminal("Rewards if successful:", "info");
-    printToTerminal(`${boss.rewards.exp} XP`, "info");
-    printToTerminal(`${boss.rewards.gold} Gold`, "info");
-
-    // Update UI
-    updateStatusBar();
-    windowSystem.updateWindowContent("battleWindow");
-    
-    // Trigger battle start sound/notification
-    handleBossBattleStart();
-  } catch (error) {
-    console.error("Error starting boss battle:", error);
-    printToTerminal("Error starting boss battle: " + error.message, "error");
-  }
-};
-
-window.startBossBattle = startBossBattle;
-
-
-window.updateBattleProgress = async function(args) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                 if (!isAuthenticated) {
-    printToTerminal("You must !reawaken first.", "error");
-    return;
-  }
-
-  if (!args || args.length < 2) {
-    printToTerminal("Usage: !progress <boss_id> <amount>", "warning");
-    printToTerminal("Example: !progress step_master 1000", "info");
-    return;
-  }
-
-  const [bossId, amount] = args;
-  const boss = Object.values(BOSSES).find((b) => b.id === bossId);
-  if (!boss) {
-    printToTerminal("Invalid boss battle ID.", "error");
-    return;
-  }
-
-  try {
-    const playerRef = db.collection("players").doc(currentUser.uid);
-    const activeBattleRef = playerRef.collection("activeBattles").doc(bossId);
-    const activeBattle = await activeBattleRef.get();
-
-    if (!activeBattle.exists) {
-      printToTerminal("You haven't started this boss battle yet!", "error");
-      printToTerminal(`Use !challenge ${bossId} to start`, "info");
-      return;
-    }
-
-    const battle = activeBattle.data();
-    const now = new Date();
-    const endTime = battle.endTime.toDate();
-
-    if (now > endTime) {
-      await handleBossBattleTimeout(playerRef, bossId, battle);
-      return;
-    }
-
-    const newCount =
-      amount === "complete" ? battle.targetCount : parseInt(amount);
-    if (isNaN(newCount)) {
-      printToTerminal("Please provide a valid number.", "error");
-      return;
-    }
-
-    if (newCount >= battle.targetCount && !battle.completed) {
-      // Boss defeated!
-      const player = (await playerRef.get()).data();
-      const defeatCount = player.defeatedBosses?.[bossId] || 0;
-
-      // Calculate scaled rewards
-      const scaledExp =
-        boss.rewards.exp + defeatCount * boss.scaling.rewards.exp;
-      const scaledGold =
-        boss.rewards.gold + defeatCount * boss.scaling.rewards.gold;
-
-      // Update defeat count
-      const defeatedBossesUpdate = {
-        [`defeatedBosses.${bossId}`]:
-          firebase.firestore.FieldValue.increment(1),
-      };
-
-      // Award rewards
-      await playerRef.update({
-        exp: firebase.firestore.FieldValue.increment(scaledExp),
-        gold: firebase.firestore.FieldValue.increment(scaledGold),
-        "profile.title": boss.rewards.title,
-        ...defeatedBossesUpdate,
-      });
-
-      // Update local stats
-      playerStats.exp += scaledExp;
-      playerStats.gold += scaledGold;
-      playerStats.profile.title = boss.rewards.title;
-      if (!playerStats.defeatedBosses) playerStats.defeatedBosses = {};
-      playerStats.defeatedBosses[bossId] =
-        (playerStats.defeatedBosses[bossId] || 0) + 1;
-
-      // Delete completed battle
-      await activeBattleRef.delete();
-
-      printToTerminal(`\n🎉 BOSS DEFEATED: ${boss.name}! 🎉`, "success");
-      printToTerminal(`This was defeat #${defeatCount + 1}!`, "success");
-      printToTerminal(`Rewards earned:`, "reward");
-      printToTerminal(`- ${scaledExp} XP`, "reward");
-      printToTerminal(`- ${scaledGold} Gold`, "reward");
-      printToTerminal(`- New Title: ${boss.rewards.title}`, "reward");
-      printToTerminal(`\nNext time the boss will be stronger:`, "info");
-      printToTerminal(
-        `- Target: +${boss.scaling.targetCount} ${boss.metric}`,
-        "info"
-      );
-      printToTerminal(
-        `- Rewards: +${boss.scaling.rewards.exp} XP, +${boss.scaling.rewards.gold} Gold`,
-        "info"
-      );
-
-      audioSystem.playVoiceLine('BOSS_VICTORY');
-      printToTerminal(`You have defeated ${boss.name}!`, "success");
-    } else {
-      // Update progress
-      await activeBattleRef.update({
-        currentCount: newCount,
-      });
-    }
-
-    // Check for level up and achievements
-    await checkLevelUp(playerRef, playerStats.exp);
-    await checkAchievements();
-    updateStatusBar();
-    windowSystem.updateWindowContent("BattleWindow");
-  } catch (error) {
-    printToTerminal(
-      "Error updating battle progress: " + error.message,
-      "error"
-    );
-  }
-}
-
-window.updateBattleProgress = updateBattleProgress;
 // Command Handler
 const commands = {
   "!commands": showHelp,
@@ -783,22 +560,10 @@ async function showAchievements() {
     printToTerminal("You must !reawaken first.", "error");
     return;
   }
-
-  const playerRef = db.collection("players").doc(currentUser.uid);
-  const player = (await playerRef.get()).data();
-
-  printToTerminal("=== ACHIEVEMENTS ===", "info");
-  player.achievements.forEach((achievementId) => {
-    const achievement = Object.values(ACHIEVEMENTS).find(
-      (a) => a.id === achievementId
-    );
-    if (achievement) {
-      printToTerminal(`- ${achievement.name}`, "info");
-    }
-  });
+  windowSystem.showWindow("achievementsWindow");
 }
 
-window.startQuestCreation = (type) => {
+function startQuestCreation(type) {
   if (!isAuthenticated) {
     printToTerminal("You must !reawaken first.", "error");
     return;
@@ -945,71 +710,47 @@ async function createQuest(quest) {
   }
 }
 async function showQuestWindow(type) {
-  try {
-    if (!isAuthenticated || !currentUser || !currentUser.uid) {
-      printToTerminal("You must !reawaken first.", "error");
-      return;
-    }
-
-    const questsRef = db
-      .collection("players")
-      .doc(currentUser.uid)
-      .collection(type === "daily" ? "dailyQuests" : "quests");
-
-    const snapshot = await questsRef.get();
-
-    printToTerminal(
-      `=== ${type === "daily" ? "DAILY QUESTS" : "QUESTS"} ===`,
-      "info"
-    );
-
-    if (snapshot.empty) {
-      printToTerminal(`No ${type} quests available.`, "warning");
-      return;
-    }
-
-    snapshot.forEach((doc) => {
-      const quest = doc.data();
-      printToTerminal(`\n[${quest.title}]`, "quest");
-      printToTerminal(
-        `Progress: ${quest.currentCount}/${quest.targetCount} ${quest.metric}`,
-        "info"
-      );
-      printToTerminal(`Description: ${quest.description}`, "system");
-
-      if (type === "daily") {
-        const endOfDay = getEndOfDay(); // Ensure this function is defined
-        const timeRemaining = endOfDay - new Date();
-        printToTerminal(
-          `Time remaining: ${formatTimeRemaining(timeRemaining)}`,
-          "warning"
-        );
-      }
-
-      printToTerminal(`Commands:`, "system");
-      printToTerminal(
-        `  !update ${doc.id} ${type} <amount>  - Add specific amount`,
-        "info"
-      );
-      printToTerminal(
-        `  !update ${doc.id} ${type} complete  - Complete instantly`,
-        "info"
-      );
-      if (type === "daily") {
-        printToTerminal(
-          `  <button class="window-button danger" onclick="deleteQuest('${doc.id}', 'daily')">
-            Delete Quest
-          </button>`,
-          "info"
-        );
-      }
-      printToTerminal("---", "system");
-    });
-  } catch (error) {
-    printToTerminal("Error loading quests: " + error.message, "error");
-    console.error("Error details:", error); // Log full error for debugging
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
   }
+
+  // Fetch the quests based on the type
+  let quests;
+  if (type === "daily") {
+    quests = await fetchDailyQuests(); // Assume this function fetches daily quests
+  } else {
+    quests = await fetchNormalQuests(); // Assume this function fetches normal quests
+  }
+  windowSystem.showWindow("dailyQuestsWindow");
+  windowSystem.showWindow("questsWindow");
 }
+
+// Command handlers
+const commandHandlers = {
+  "!quests": () => showQuestWindow("normal"),
+  "!q": () => showQuestWindow("normal"),
+  "!dailyquests": () => showQuestWindow("daily"),
+  "!dq": () => showQuestWindow("daily"),
+};
+
+// Example function to fetch daily quests
+async function fetchDailyQuests() {
+  // Fetch daily quests from your data source
+  return [
+    { title: "Daily Push-ups", description: "Complete 100 push-ups.", progress: 0, goal: 100 },
+    { title: "Daily Running", description: "Run 10 km.", progress: 0, goal: 10 },
+  ];
+}
+
+// Example function to fetch normal quests
+async function fetchNormalQuests() {
+  // Fetch normal quests from your data source
+  return [
+    { title: "Normal Quest 1", description: "Complete the first normal quest.", progress: 0, goal: 1 },
+  ];
+}
+
 async function printToTerminal(text, type = "default") {
   const line = document.createElement("div");
   line.className = "terminal-line";
@@ -1176,7 +917,7 @@ function updateStatusBar() {
 }
 
 // Add this to check and reset daily quests
-window.checkDailyQuests = async function() {
+async function checkDailyQuests() {
   if (!currentUser) return;
 
   const dailyQuestsRef = db
@@ -1302,6 +1043,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const styleSheet = document.createElement("style");
   styleSheet.textContent = styles + suggestionStyles;
   document.head.appendChild(styleSheet);
+
 });
 
 // Add command autocomplete
@@ -1768,6 +1510,322 @@ const ACHIEVEMENTS = {
   }
 };
 
+
+
+const ITEMS = {
+  // 🎓 XP & Level Boosters
+  MINOR_XP_BOOST: {
+    id: "minor_xp_boost",
+    name: "Minor XP Boost",
+    description: "Increases XP gain by 10% for 30 minutes",
+    price: 50,
+    category: "booster",
+    rankRequired: "E",
+    duration: 1800000, // 30 minutes
+    effect: { type: "global_xp", value: 1.1 },
+  },
+  GOLDEN_GRIMOIRE: {
+    id: "golden_grimoire",
+    name: "Golden Grimoire",
+    description: "Increases XP gain from all activities by 25% for 2 hours",
+    price: 250,
+    category: "booster",
+    rankRequired: "D",
+    duration: 7200000, // 2 hours
+    effect: { type: "global_xp", value: 1.25 },
+  },
+  RULERS_AUTHORITY: {
+    id: "rulers_authority",
+    name: "Ruler's Authority",
+    description: "Triples XP gain from all sources for 30 minutes",
+    price: 1000,
+    category: "booster",
+    rankRequired: "A",
+    duration: 1800000, // 30 minutes
+    effect: { type: "global_xp", value: 3.0 },
+  },
+
+  // 🎯 Quest & Progress
+  BASIC_QUEST_BOOST: {
+    id: "basic_quest_boost",
+    name: "Basic Quest Boost",
+    description: "Increases quest progress speed by 20% for 30 minutes",
+    price: 75,
+    category: "enhancer",
+    rankRequired: "E",
+    duration: 1800000, // 30 minutes
+    effect: { type: "quest_progress", value: 1.2 },
+  },
+  MONARCHS_BLESSING: {
+    id: "monarchs_blessing",
+    name: "Monarch's Blessing",
+    description: "Triples all quest rewards and progress for 30 minutes",
+    price: 800,
+    category: "enhancer",
+    rankRequired: "B",
+    duration: 1800000, // 30 minutes
+    effect: { type: "quest_rewards", value: 3.0 },
+  },
+
+  // 🏆 Permanent Upgrades
+  MINOR_UPGRADE: {
+    id: "minor_upgrade",
+    name: "Minor Upgrade",
+    description: "Permanently increases all XP gain by 2%",
+    price: 100,
+    category: "upgrade",
+    rankRequired: "E",
+    effect: { type: "permanent_xp", value: 1.02 },
+  },
+  GOLD_MAGNET: {
+    id: "gold_magnet",
+    name: "Gold Magnet",
+    description: "Permanently increases gold earned from all sources by 15%",
+    price: 2000,
+    category: "upgrade",
+    rankRequired: "A",
+    effect: { type: "gold_multiplier", value: 1.15 },
+  },
+  MONARCHS_DOMAIN: {
+    id: "monarchs_domain",
+    name: "Monarch's Domain",
+    description: "Permanently increases all stats by 20%",
+    price: 5000,
+    category: "upgrade",
+    rankRequired: "S",
+    effect: { type: "all_stats", value: 1.2 },
+  },
+
+  // 🎨 Profile Customization
+  CUSTOM_NAME_COLOR: {
+    id: "custom_name_color",
+    name: "Custom Name Color",
+    description: "Change the color of your name in rankings and messages",
+    price: 500,
+    category: "cosmetic",
+    rankRequired: "E",
+    effect: { type: "name_color", value: true },
+  },
+  PROFILE_SHOWCASE: {
+    id: "profile_showcase",
+    name: "Profile Showcase",
+    description: "Unlocks custom profile layout and background themes",
+    price: 800,
+    category: "cosmetic",
+    rankRequired: "D",
+    effect: { type: "profile_custom", value: true },
+  },
+  LEVEL_EFFECT: {
+    id: "level_effect",
+    name: "Level-Up Effect",
+    description: "Adds custom visual effects when you level up",
+    price: 1000,
+    category: "cosmetic",
+    rankRequired: "C",
+    effect: { type: "level_visual", value: true },
+  },
+
+  // 👑 Titles
+  TITLE_SHADOW_MONARCH: {
+    id: "title_shadow_monarch",
+    name: 'Title: "Shadow Monarch"',
+    description: "The ultimate title reserved for the strongest",
+    price: 5000,
+    category: "title",
+    rankRequired: "S",
+    effect: { type: "title", value: "Shadow Monarch" },
+  },
+  TITLE_ARISE: {
+    id: "title_arise",
+    name: 'Title: "ARISE"',
+    description: "The ultimate command of the Shadow Monarch",
+    price: 10000,
+    category: "title",
+    rankRequired: "S",
+    effect: { type: "title", value: "ARISE" },
+  },
+
+  // Colored Title Items
+  TITLE_CRIMSON_LORD: {
+    id: "title_crimson_lord",
+    name: 'Title: "Crimson Lord"',
+    description: "A blood-red title for those who command respect",
+    price: 3000,
+    category: "title",
+    rankRequired: "A",
+    effect: { type: "title", value: "Crimson Lord", color: "#ff3333" },
+  },
+  TITLE_FROST_SOVEREIGN: {
+    id: "title_frost_sovereign",
+    name: 'Title: "Frost Sovereign"',
+    description: "An icy blue title for the masters of cold",
+    price: 3000,
+    category: "title",
+    rankRequired: "A",
+    effect: { type: "title", value: "Frost Sovereign", color: "#33ccff" },
+  },
+  TITLE_EMERALD_SAGE: {
+    id: "title_emerald_sage",
+    name: 'Title: "Emerald Sage"',
+    description: "A mystical green title for the wisest hunters",
+    price: 3000,
+    category: "title",
+    rankRequired: "A",
+    effect: { type: "title", value: "Emerald Sage", color: "#33ff66" },
+  },
+  TITLE_GOLDEN_EMPEROR: {
+    id: "title_golden_emperor",
+    name: 'Title: "Golden Emperor"',
+    description: "A majestic golden title for the wealthiest hunters",
+    price: 5000,
+    category: "title",
+    rankRequired: "S",
+    effect: { type: "title", value: "Golden Emperor", color: "#ffcc33" },
+  },
+
+  // 🌟 Special Items
+  DAILY_QUEST_RESET: {
+    id: "daily_quest_reset",
+    name: "Daily Quest Reset",
+    description: "Reset all daily quests immediately",
+    price: 750,
+    category: "special",
+    rankRequired: "B",
+    effect: { type: "reset_daily", value: true },
+  },
+  DEMON_KINGS_SOUL: {
+    id: "demon_kings_soul",
+    name: "Demon King's Soul",
+    description: "Grants immense power for 5 minutes",
+    price: 5000,
+    category: "special",
+    rankRequired: "A",
+    duration: 300000, // 5 minutes
+    effect: { type: "all_stats", value: 5.0 },
+  },
+
+  // 🆕 New Features
+  QUEST_CHAIN: {
+    id: "quest_chain",
+    name: "Quest Chain",
+    description: "Unlock chain quests that give increasing rewards for consecutive completion",
+    price: 1500,
+    category: "special",
+    rankRequired: "C",
+    effect: { type: "quest_chain", value: true },
+  },
+  ACHIEVEMENT_TRACKER: {
+    id: "achievement_tracker",
+    name: "Achievement Tracker",
+    description: "Shows hidden achievements and tracks progress in real-time",
+    price: 1000,
+    category: "special",
+    rankRequired: "D",
+    effect: { type: "achievement_tracking", value: true },
+  },
+  CUSTOM_MILESTONES: {
+    id: "custom_milestones",
+    name: "Custom Milestones",
+    description: "Create and track personal milestones with custom rewards",
+    price: 2000,
+    category: "special",
+    rankRequired: "C",
+    effect: { type: "milestone_custom", value: true },
+  },
+  SHADOW_ARMY_DISPLAY: {
+    id: "shadow_army_display",
+    name: "Shadow Army Display",
+    description: "Shows your shadow army progress and achievements on profile",
+    price: 1500,
+    category: "cosmetic",
+    rankRequired: "B",
+    effect: { type: "army_display", value: true },
+  },
+  RANK_INSIGNIA: {
+    id: "rank_insignia",
+    name: "Rank Insignia",
+    description: "Displays a special badge next to your name based on your rank",
+    price: 1000,
+    category: "cosmetic",
+    rankRequired: "C",
+    effect: { type: "rank_badge", value: true },
+  },
+  DUNGEON_LOG: {
+    id: "dungeon_log",
+    name: "Dungeon Log",
+    description: "Tracks and displays your dungeon clear history and statistics",
+    price: 800,
+    category: "special",
+    rankRequired: "D",
+    effect: { type: "dungeon_history", value: true },
+  },
+
+  // 🖤 Shadow Abilities
+  SHADOW_EXTRACTION: {
+    id: "shadow_extraction",
+    name: "Shadow Extraction",
+    description: "Unlocks the ability to extract shadows from defeated bosses",
+    price: 3000,
+    category: "shadow",
+    rankRequired: "A",
+    effect: { type: "shadow_ability", value: "extraction" }
+  },
+  SHADOW_STORAGE_1: {
+    id: "shadow_storage_1",
+    name: "Shadow Storage I",
+    description: "Increases maximum shadow soldier capacity by 10",
+    price: 1000,
+    category: "shadow",
+    rankRequired: "B",
+    effect: { type: "max_shadows", value: 10 }
+  },
+  SHADOW_STORAGE_2: {
+    id: "shadow_storage_2",
+    name: "Shadow Storage II",
+    description: "Increases maximum shadow soldier capacity by 25",
+    price: 2500,
+    category: "shadow",
+    rankRequired: "A",
+    effect: { type: "max_shadows", value: 25 }
+  },
+  SHADOW_STORAGE_3: {
+    id: "shadow_storage_3",
+    name: "Shadow Storage III",
+    description: "Increases maximum shadow soldier capacity by 50",
+    price: 5000,
+    category: "shadow",
+    rankRequired: "S",
+    effect: { type: "max_shadows", value: 50 }
+  },
+  ELITE_SHADOW_UPGRADE: {
+    id: "elite_shadow_upgrade",
+    name: "Elite Shadow Upgrade",
+    description: "Unlocks the ability to create Elite Shadow Soldiers",
+    price: 4000,
+    category: "shadow",
+    rankRequired: "A",
+    effect: { type: "shadow_tier", value: "elite" }
+  },
+  GENERAL_SHADOW_UPGRADE: {
+    id: "general_shadow_upgrade",
+    name: "General Shadow Upgrade",
+    description: "Unlocks the ability to create Shadow Generals",
+    price: 6000,
+    category: "shadow",
+    rankRequired: "S",
+    effect: { type: "shadow_tier", value: "general" }
+  },
+  MONARCH_SHADOW_UPGRADE: {
+    id: "monarch_shadow_upgrade",
+    name: "Monarch Shadow Upgrade",
+    description: "Unlocks the ability to create Shadow Monarchs",
+    price: 10000,
+    category: "shadow",
+    rankRequired: "S",
+    effect: { type: "shadow_tier", value: "monarch" }
+  },
+};
+
 // Leaderboard function
 async function showLeaderboard() {
   if (!isAuthenticated) {
@@ -1778,7 +1836,6 @@ async function showLeaderboard() {
   windowSystem.showWindow("leaderboardWindow");
 }
 
-// Achievement system
 async function checkAchievements() {
   if (!isAuthenticated) return;
 
@@ -1791,6 +1848,8 @@ async function checkAchievements() {
       await playerRef.update({ achievements: {} });
       player.achievements = {};
     }
+
+    let achievementsUpdated = false; // Flag to track if any achievements were updated
 
     for (const [key, achievement] of Object.entries(ACHIEVEMENTS)) {
       // Initialize achievement in player data if not exists
@@ -1837,54 +1896,63 @@ async function checkAchievements() {
       }
 
       if (completed) {
-        // Update achievement rank and grant rewards
-        await playerRef.update({
-          [`achievements.${achievement.id}.currentRank`]: nextRank,
-          exp: firebase.firestore.FieldValue.increment(rankData.reward.exp),
-          gold: firebase.firestore.FieldValue.increment(rankData.reward.gold),
-        });
+        try {
+          // Update achievement rank and grant rewards in the database
+          await playerRef.update({
+            [`achievements.${achievement.id}.currentRank`]: nextRank,
+            exp: firebase.firestore.FieldValue.increment(rankData.reward.exp),
+            gold: firebase.firestore.FieldValue.increment(rankData.reward.gold),
+          });
 
-        // Update local stats
-        playerStats.exp += rankData.reward.exp;
-        playerStats.gold += rankData.reward.gold;
-        if (!playerStats.achievements) playerStats.achievements = {};
-        if (!playerStats.achievements[achievement.id]) {
-          playerStats.achievements[achievement.id] = { currentRank: 0 };
+          // Update local stats *after* successful database update
+          playerStats.exp += rankData.reward.exp;
+          playerStats.gold += rankData.reward.gold;
+          if (!playerStats.achievements) playerStats.achievements = {};
+          if (!playerStats.achievements[achievement.id]) {
+            playerStats.achievements[achievement.id] = { currentRank: 0 };
+          }
+          playerStats.achievements[achievement.id].currentRank = nextRank;
+
+          const rankText =
+            nextRank === achievement.ranks.length ? "MAX" : nextRank;
+          showNotification(
+            `Achievement Ranked Up: ${achievement.name} Rank ${rankText}! ${achievement.icon}`
+          );
+          printToTerminal(
+            `🏆 Achievement Ranked Up: ${achievement.name} (Rank ${rankText})`,
+            "success"
+          );
+          printToTerminal(`${achievement.description}`, "info");
+          printToTerminal(
+            `Rewards: ${rankData.reward.exp} EXP, ${rankData.reward.gold} gold`,
+            "reward"
+          );
+
+          achievementsUpdated = true; // Set flag to true
+
+        } catch (error) {
+          console.error("Error updating achievement:", error);
+          // Handle the error appropriately, e.g., show an error message to the user.
         }
-        playerStats.achievements[achievement.id].currentRank = nextRank;
-
-        const rankText =
-          nextRank === achievement.ranks.length ? "MAX" : nextRank;
-        showNotification(
-          `Achievement Ranked Up: ${achievement.name} Rank ${rankText}! ${achievement.icon}`
-        );
-        printToTerminal(
-          `🏆 Achievement Ranked Up: ${achievement.name} (Rank ${rankText})`,
-          "success"
-        );
-        printToTerminal(`${achievement.description}`, "info");
-        printToTerminal(
-          `Rewards: ${rankData.reward.exp} EXP, ${rankData.reward.gold} gold`,
-          "reward"
-        );
-
-        // Check for level up from achievement rewards
-        await checkLevelUp(playerRef, playerStats.exp);
-        updateStatusBar();
-
-        // Check for rank up after achievement
-        await checkAndUpdateRank(playerRef, playerStats);
-
-        audioSystem.playVoiceLine('ACHIEVEMENT');
       }
     }
+
+    // Check for level up and rank up *after* the achievement loop
+    if (achievementsUpdated) {
+      await checkLevelUp(playerRef, playerStats.exp);
+      updateStatusBar();
+      await checkAndUpdateRank(playerRef, playerStats);
+      audioSystem.playVoiceLine('ACHIEVEMENT');
+    }
+
   } catch (error) {
     console.error("Check achievements error:", error);
   }
 }
 
-// Inventory system
-async function showInventory() {
+
+// Profile system
+async function showProfile() {
   if (!isAuthenticated) {
     printToTerminal("You must !reawaken first.", "error");
     return;
@@ -1893,38 +1961,87 @@ async function showInventory() {
   const playerRef = db.collection("players").doc(currentUser.uid);
   const player = (await playerRef.get()).data();
 
-  printToTerminal("=== INVENTORY ===", "info");
-  if (player.inventory.length === 0) {
-    printToTerminal("Your inventory is empty!", "warning");
-    return;
+  // Ensure profile exists
+  if (!player.profile) {
+    player.profile = {
+      name: "",
+      title: "Novice",
+      picture: "default.png",
+      bio: "",
+      class: "Hunter",
+      joinDate: null,
+    };
+    // Update the player document with initialized profile
+    await playerRef.update({ profile: player.profile });
   }
 
-  player.inventory.forEach((item) => {
-    const itemData = ITEMS[item.id];
-    if (itemData) {
-      printToTerminal(`${itemData.name} - ${itemData.description}`, "info");
-      if (item.expiresAt) {
-        const timeLeft = Math.max(0, item.expiresAt - Date.now());
-        printToTerminal(
-          `Time remaining: ${Math.ceil(timeLeft / 60000)} minutes`,
-          "info"
-        );
+  printToTerminal("\n=== PLAYER PROFILE ===", "system");
+  printToTerminal(`Name: ${player.profile.name || "Not set"}`, "info");
+  printToTerminal(`Title: ${player.profile.title || "Novice"}`, "info");
+  printToTerminal(`Class: ${player.profile.class || "Hunter"}`, "info");
+  if (player.profile.bio) {
+    printToTerminal(`\nBio: ${player.profile.bio}`, "info");
+  }
+  printToTerminal("\nStats:", "info");
+  printToTerminal(`Level: ${player.level}`, "info");
+  printToTerminal(`EXP: ${player.exp}/100`, "info");
+  printToTerminal(`Gold: ${player.gold}`, "info");
+  printToTerminal(`Rank: ${player.rank}`, "info");
+  printToTerminal(`Daily Streak: ${player.streak} days`, "info");
+  printToTerminal(`Quests Completed: ${player.questsCompleted}`, "info");
+
+
+  if (player.waterIntake?.streakDays > 0) {
+    printToTerminal(
+      `Water Streak: ${player.waterIntake.streakDays} days`,
+      "info"
+    );
+  }
+
+  printToTerminal("\nAchievements:", "info");
+  if (!player.achievements || player.achievements.length === 0) {
+    printToTerminal("No achievements yet", "warning");
+  } else {
+    player.achievements.forEach((achievementId) => {
+      const achievement = Object.values(ACHIEVEMENTS).find(
+        (a) => a.id === achievementId
+      );
+      if (achievement) {
+        printToTerminal(`- ${achievement.name}`, "info");
       }
-    }
-  });
+    });
+  }
+
+  printToTerminal("\nProfile Commands:", "system");
+  printToTerminal("!setname <name> - Set your hunter name", "info");
+  printToTerminal("!settitle <title> - Set your title", "info");
+  printToTerminal("!setbio <text> - Set your profile bio", "info");
+  printToTerminal("!setclass <class> - Set your hunter class", "info");
 }
 
-// Add this function before completeQuest
-function getExpNeededForLevel(level) {
-  // Base XP for first level
-  const baseExp = 100;
-  // Logarithmic growth component
-  const logGrowth = 50 * Math.log(level + 1);
-  // Linear growth component
-  const linearGrowth = 25 * level;
+// Inventory system
+async function showInventory() {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+  windowSystem.showWindow("inventoryWindow");
+}
 
-  // Hybrid formula with diminishing returns
-  return Math.floor(baseExp + linearGrowth + logGrowth);
+function getExpNeededForLevel(level) {
+  // Adjusted curve for 6-month progression to level 100
+  // Base XP increases more gradually at lower levels and scales up
+  const baseXP = 100;
+  const scalingFactor = 1.08; // Reduced from 1.15 to make progression smoother
+  const maxLevel = 100;
+  
+  // Linear growth for first 20 levels, then exponential
+  if (level <= 20) {
+    return Math.floor(baseXP * (1 + (level - 1) * 0.1));
+  }
+  
+  // Exponential growth after level 20
+  return Math.floor(baseXP * Math.pow(scalingFactor, level - 1));
 }
 
 async function checkLevelUp(playerRef, currentExp) {
@@ -1983,9 +2100,7 @@ async function checkLevelUp(playerRef, currentExp) {
   return false;
 }
 
-
-// Modify the completeQuest function's transaction block
-window.completeQuest = async function(questId, type) {
+async function completeQuest(questId, type) {
   try {
     const playerRef = db.collection("players").doc(currentUser.uid);
     const questRef = db
@@ -1994,33 +2109,18 @@ window.completeQuest = async function(questId, type) {
       .collection(type === "daily" ? "dailyQuests" : "quests")
       .doc(questId);
 
-    // For daily quests, check if already completed today
+    // Check if quest was already completed today
     if (type === "daily") {
-    const questDoc = await questRef.get();
-    const quest = questDoc.data();
-
-      if (quest.completed && quest.lastCompletion) {
-        const lastCompletion = quest.lastCompletion.toDate();
-        const now = new Date();
-
-        // Check if completed today
-        if (
-          lastCompletion.getDate() === now.getDate() &&
-          lastCompletion.getMonth() === now.getMonth() &&
-          lastCompletion.getYear() === now.getYear()
-        ) {
-      printToTerminal(
-            "This daily quest was already completed today!",
-        "warning"
-      );
-      return;
-        }
+      const questDoc = await questRef.get();
+      const quest = questDoc.data();
+      if (quest.completed && wasCompletedToday(quest.lastCompletion)) {
+        printToTerminal("This daily quest was already completed today!", "warning");
+        return;
       }
     }
 
-    // Calculate base rewards - reduced values
-    const expReward = type === "daily" ? 30 : 20; // Daily quests give more exp
-    const goldReward = type === "daily" ? 15 : 10; // Daily quests give more gold
+    const baseExpReward = type === "daily" ? 50 : 30;
+    const baseGoldReward = type === "daily" ? 25 : 15;
 
     await db.runTransaction(async (transaction) => {
       const playerDoc = await transaction.get(playerRef);
@@ -2028,153 +2128,76 @@ window.completeQuest = async function(questId, type) {
 
       const player = playerDoc.data();
 
-      // Initialize arrays if they don't exist
-      if (!player.achievements) {
-        await playerRef.update({ achievements: [] });
-        player.achievements = [];
-      }
-
-      // Apply active item effects
-      const activeItems =
-        player.inventory?.filter(
-          (item) => item.expiresAt && item.expiresAt > Date.now()
-        ) || [];
-
-      let expMultiplier = 1;
-      let goldMultiplier = 1;
-
-      activeItems.forEach((item) => {
+      // Calculate multipliers from active items
+      const activeItems = player.inventory?.filter(item => item.expiresAt && item.expiresAt > Date.now()) || [];
+      const expMultiplier = activeItems.reduce((acc, item) => {
         const itemData = ITEMS[item.id];
-        if (itemData?.effect?.type === "exp_multiplier") {
-          expMultiplier *= itemData.effect.value;
-        } else if (itemData?.effect?.type === "gold_multiplier") {
-          goldMultiplier *= itemData.effect.value;
-        }
-      });
+        return itemData?.effect?.type === "exp_multiplier" ? acc * itemData.effect.value : acc;
+      }, 1);
+      const goldMultiplier = activeItems.reduce((acc, item) => {
+        const itemData = ITEMS[item.id];
+        return itemData?.effect?.type === "gold_multiplier" ? acc * itemData.effect.value : acc;
+      }, 1);
 
       // Calculate final rewards
-      const finalExpReward = Math.floor(expReward * expMultiplier);
-      const finalGoldReward = Math.floor(goldReward * goldMultiplier);
+      const finalExpReward = Math.floor(baseExpReward * expMultiplier);
+      const finalGoldReward = Math.floor(baseGoldReward * goldMultiplier);
 
-      // Calculate new total exp and check for level up
-      const newTotalExp = player.exp + finalExpReward;
-      const expNeeded = 100;
-      const levelsToGain = Math.floor(newTotalExp / expNeeded);
-      const remainingExp = newTotalExp % expNeeded;
-
-      // Prepare updates object
+      // Prepare updates
       const updates = {
+        exp: firebase.firestore.FieldValue.increment(finalExpReward),
         gold: firebase.firestore.FieldValue.increment(finalGoldReward),
-        questsCompleted: firebase.firestore.FieldValue.increment(1),
+        questsCompleted: firebase.firestore.FieldValue.increment(1)
       };
 
-      // Add exp and level updates
-      if (levelsToGain > 0) {
-        updates.level = firebase.firestore.FieldValue.increment(levelsToGain);
-        updates.exp = remainingExp;
-      } else {
-        updates.exp = firebase.firestore.FieldValue.increment(finalExpReward);
-      }
-
-      // Update streak for daily quests
-      let isNextDay = false;
+      // Handle daily streak
       if (type === "daily") {
-        const lastCompletion =
-          player.lastDailyCompletion?.toDate() || new Date(0);
-        const now = new Date();
-        isNextDay =
-          lastCompletion.getDate() !== now.getDate() ||
-          lastCompletion.getMonth() !== now.getMonth() ||
-          lastCompletion.getYear() !== now.getYear();
-
+        const isNextDay = !wasCompletedToday(player.lastDailyCompletion?.toDate());
         if (isNextDay) {
           updates.streak = firebase.firestore.FieldValue.increment(1);
-          updates.lastDailyCompletion =
-            firebase.firestore.FieldValue.serverTimestamp();
+          updates.lastDailyCompletion = firebase.firestore.FieldValue.serverTimestamp();
         }
       }
 
-      // Apply all updates in one transaction
+      // Apply updates
       transaction.update(playerRef, updates);
 
-      // Handle quest completion
+      // Update quest status
       if (type === "daily") {
         transaction.update(questRef, {
           completed: true,
-          lastCompletion: firebase.firestore.FieldValue.serverTimestamp(),
+          lastCompletion: firebase.firestore.FieldValue.serverTimestamp()
         });
       } else {
-      transaction.delete(questRef);
+        transaction.delete(questRef);
       }
 
-      // Update local stats immediately
-      if (levelsToGain > 0) {
-        playerStats.level += levelsToGain;
-        playerStats.exp = remainingExp;
-      } else {
-        playerStats.exp += finalExpReward;
-      }
+      // Update local stats
+      playerStats.exp += finalExpReward;
       playerStats.gold += finalGoldReward;
       playerStats.questsCompleted = (playerStats.questsCompleted || 0) + 1;
-      if (type === "daily" && isNextDay) {
+      if (type === "daily" && updates.streak) {
         playerStats.streak = (playerStats.streak || 0) + 1;
       }
       updateStatusBar();
-
-      // Update the quest UI immediately
-      windowSystem.updateWindowContent("questsWindow");
-      windowSystem.updateWindowContent("dailyQuestsWindow");
-
-      // Store level up info for after transaction
-      if (levelsToGain > 0) {
-        setTimeout(() => {
-          const levelUpMessage = getRandomItem(
-            MOTIVATION.MILESTONE_MESSAGES.LEVEL_UP
-          );
-          printToTerminal(`\n${levelUpMessage}`, "system");
-          printToTerminal(
-            `🎉 LEVEL UP! You gained ${levelsToGain} level${
-              levelsToGain > 1 ? "s" : ""
-            }!`,
-            "success"
-          );
-          printToTerminal(`You are now level ${playerStats.level}!`, "success");
-          showNotification(
-            `Level Up! You are now level ${playerStats.level}! 🎉`
-          );
-        }, 100);
-      }
     });
 
-    // Check for achievements after transaction
+    // Check for level up and achievements after transaction
+    const leveledUp = await checkLevelUp(playerRef, playerStats.exp);
     await checkAchievements();
 
+    // Show completion message
     audioSystem.playVoiceLine('QUEST_COMPLETE');
     const questMessage = getRandomItem(MOTIVATION.MILESTONE_MESSAGES.QUEST_COMPLETE);
     printToTerminal(`\n${questMessage}`, "system");
     printToTerminal(`Quest completed successfully!`, "success");
-    printToTerminal(
-      `Earned ${expReward} EXP and ${goldReward} gold!`,
-      "reward"
-    );
-    
-    if (type === "daily") {
-      const player = (await playerRef.get()).data();
-      printToTerminal(`Daily streak: ${player.streak} days`, "info");
-    }
+    printToTerminal(`Earned ${baseExpReward} EXP and ${baseGoldReward} gold!`, "reward");
 
-    // Update windows
-    windowSystem.updateWindowContent("questsWindow");
-    windowSystem.updateWindowContent("dailyQuestsWindow");
+    // Update UI
+    windowSystem.updateWindowContent(type === "daily" ? "dailyQuestsWindow" : "questsWindow");
     windowSystem.updateWindowContent("achievementsWindow");
+    windowSystem.updateWindowContent("profileWindow");
 
-    // After quest completion and rewards
-    await checkAndUpdateRank(playerRef, playerStats);
-    await checkAchievements();
-
-    // Ensure the quest is marked as completed in the UI
-    windowSystem.updateWindowContent("questsWindow");
-    windowSystem.updateWindowContent("dailyQuestsWindow");
   } catch (error) {
     printToTerminal("Error completing quest: " + error.message, "error");
     console.error("Complete quest error:", error);
@@ -2205,7 +2228,7 @@ const SHADOW_TIERS = {
   }
 };
 
-window.extractShadow = async function(bossId) {
+async function extractShadow(bossId) {
   if (!isAuthenticated) {
     printToTerminal("You must !reawaken first.", "error");
     return;
@@ -2351,6 +2374,222 @@ function wasCompletedToday(lastCompletion) {
   );
 }
 
+async function completeAllQuests(type) {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+
+  try {
+    const questsRef = db
+      .collection("players")
+      .doc(currentUser.uid)
+      .collection(type === "daily" ? "dailyQuests" : "quests");
+
+    const snapshot = await questsRef.get();
+    if (snapshot.empty) {
+      printToTerminal(`No ${type} quests available.`, "warning");
+      return;
+    }
+
+    const batch = db.batch();
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    let completedQuestsCount = 0;
+
+    // First pass: count incomplete quests
+    snapshot.forEach((doc) => {
+      const quest = doc.data();
+      if (!quest.completed || (type === "daily" && !wasCompletedToday(quest.lastCompletion))) {
+        completedQuestsCount++;
+      }
+    });
+
+    if (completedQuestsCount === 0) {
+      printToTerminal(`All ${type} quests are already completed!`, "info");
+      return;
+    }
+
+    // Calculate total rewards with reduced values
+    const expPerQuest = type === "daily" ? 30 : 20;
+    const goldPerQuest = type === "daily" ? 15 : 10;
+    const totalExp = completedQuestsCount * expPerQuest;
+    const totalGold = completedQuestsCount * goldPerQuest;
+
+    // Second pass: mark all quests as completed
+    snapshot.forEach((doc) => {
+      const quest = doc.data();
+      if (!quest.completed || (type === "daily" && !wasCompletedToday(quest.lastCompletion))) {
+        batch.update(questsRef.doc(doc.id), {
+          completed: true,
+          currentCount: quest.targetCount,
+          lastCompletion: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+    });
+
+    // Update player stats
+    batch.update(playerRef, {
+      exp: firebase.firestore.FieldValue.increment(totalExp),
+      gold: firebase.firestore.FieldValue.increment(totalGold),
+      questsCompleted: firebase.firestore.FieldValue.increment(completedQuestsCount),
+      ...(type === "daily" ? {
+        streak: firebase.firestore.FieldValue.increment(1),
+        lastDailyCompletion: firebase.firestore.FieldValue.serverTimestamp()
+      } : {})
+    });
+
+    await batch.commit();
+
+    // Print results
+    printToTerminal(`\n=== QUESTS COMPLETED ===`, "success");
+    printToTerminal(`Completed ${completedQuestsCount} ${type} quests!`, "success");
+    printToTerminal(`Total Rewards:`, "reward");
+    printToTerminal(`• ${totalExp} EXP (${expPerQuest} per quest)`, "reward");
+    printToTerminal(`• ${totalGold} Gold (${goldPerQuest} per quest)`, "reward");
+
+    // Update UI
+    updateStatusBar();
+    windowSystem.updateWindowContent(type === "daily" ? "dailyQuestsWindow" : "questsWindow");
+    windowSystem.updateWindowContent("profileWindow");
+
+    // Check for level ups and achievements
+    await checkLevelUp(playerRef, totalExp);
+    await checkAchievements();
+    await checkAndUpdateRank(playerRef, playerStats);
+
+  } catch (error) {
+    printToTerminal(`Error completing all quests: ${error.message}`, "error");
+    console.error("Error in completeAllQuests:", error);
+  }
+}
+
+async function sellShard(shardId, quantity) {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+
+  try {
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    const playerDoc = await playerRef.get();
+    const player = playerDoc.data();
+
+    const shards = player.inventory.filter(item => item.id === shardId);
+    if (shards.length === 0) {
+      printToTerminal("Invalid shard to sell.", "error");
+      return;
+    }
+
+    const totalQuantity = Math.min(quantity, shards.length);
+    const goldReward = shards[0].goldValue * totalQuantity;
+
+    // Remove the specified quantity of shards from the inventory
+    const shardsToRemove = shards.slice(0, totalQuantity);
+    await playerRef.update({
+      inventory: firebase.firestore.FieldValue.arrayRemove(...shardsToRemove),
+      gold: firebase.firestore.FieldValue.increment(goldReward)
+    });
+
+    // Update local stats
+    playerStats.inventory = playerStats.inventory.filter(item => item.id !== shardId || --totalQuantity > 0);
+    playerStats.gold += goldReward;
+
+    printToTerminal(`Sold ${totalQuantity} ${shards[0].name}${totalQuantity > 1 ? 's' : ''} for ${goldReward} gold!`, "success");
+    showNotification(`Sold ${totalQuantity} ${shards[0].name}${totalQuantity > 1 ? 's' : ''} for ${goldReward} gold!`);
+
+    // Update UI
+    windowSystem.updateWindowContent("inventoryWindow");
+    updateStatusBar();
+  } catch (error) {
+    printToTerminal("Error selling shard: " + error.message, "error");
+    console.error("Sell shard error:", error);
+  }
+}
+
+
+async function useShard(shardId) {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+
+  const playerRef = db.collection("players").doc(currentUser.uid);
+  const player = (await playerRef.get()).data();
+
+  // Find the shard in inventory
+  const shard = player.inventory.find(item => item.id === shardId);
+  if (!shard) {
+    printToTerminal("Shard not found in inventory.", "error");
+    return;
+  }
+
+  try {
+    // Use the shard (implementation depends on what the shard does)
+    // ...
+
+    // Update inventory - create a new array instead of modifying the constant
+    const updatedInventory = player.inventory.filter(item => item.id !== shardId);
+    
+    await playerRef.update({
+      inventory: updatedInventory
+    });
+
+    // Update local stats
+    playerStats.inventory = updatedInventory;
+
+    printToTerminal("Shard used successfully!", "success");
+    windowSystem.updateWindowContent("inventoryWindow");
+  } catch (error) {
+    printToTerminal("Use shard error: " + error, "error");
+    console.error("Use shard error:", error);
+  }
+}
+
+function attemptShardDrop() {
+  const dropChance = Math.random();
+  const dropThreshold = 1; // 30% chance to drop a shard
+
+  if (dropChance < dropThreshold) {
+    const droppedShard = {
+      id: "crystal_shard",
+      name: "Crystal Shard",
+      description: "Use to gain XP and sell for gold",
+      type: "shard"
+    };
+
+    // Generate random XP and gold values with a limit and rarity
+    const maxXP = 200; // Maximum XP value
+    const maxGold = 200; // Maximum gold value
+    const xpValue = Math.floor(Math.pow(Math.random(), 2) * maxXP) + 1; // Higher rarity for high XP
+    const goldValue = Math.floor(Math.pow(Math.random(), 2) * maxGold) + 1; // Higher rarity for high gold
+
+    droppedShard.xpValue = xpValue;
+    droppedShard.goldValue = goldValue;
+
+    // Add the shard to player's inventory in the database
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    playerRef.update({
+      inventory: firebase.firestore.FieldValue.arrayUnion(droppedShard)
+    }).then(() => {
+      // Update local stats
+      if (!playerStats.inventory) {
+        playerStats.inventory = [];
+      }
+      playerStats.inventory.push(droppedShard);
+      
+      showNotification(`You received: ${droppedShard.name} - ${droppedShard.description} (${droppedShard.xpValue} XP, ${droppedShard.goldValue} gold)`);
+      
+      // Update inventory window if it's open
+      windowSystem.updateWindowContent("inventoryWindow");
+    }).catch((error) => {
+      console.error("Error adding shard to inventory:", error);
+      showNotification("Error adding shard to inventory. Please try again.");
+    });
+  } else {
+    showNotification("No shards dropped this time.");
+  }
+}
+
 
 // Add these utility functions for time management
 function getEndOfDay() {
@@ -2406,6 +2645,59 @@ function startDailyQuestTimer() {
       setTimeout(startDailyQuestTimer, 1000);
     }
   }, 1000);
+}
+
+// Add this function before completeQuest
+async function addExperiencePoints(args) {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+
+  try {
+    const amount = parseInt(args[0]) || 0;
+    if (amount <= 0) {
+      printToTerminal("Please specify a valid amount of XP.", "error");
+      return;
+    }
+
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    const playerDoc = await playerRef.get();
+    const playerData = playerDoc.data();
+
+    // Calculate XP boost from active items
+    const activeEffects = getActiveItemEffects(playerData.inventory);
+    const xpMultiplier = calculateTotalBoost("global_xp", activeEffects);
+    const boostedXP = Math.floor(amount * xpMultiplier);
+
+    // Update local stats first for immediate feedback
+    playerStats.exp += boostedXP;
+    updateStatusBar(); // Update UI immediately
+
+    // Update the player's XP in database
+    await playerRef.update({
+      exp: firebase.firestore.FieldValue.increment(boostedXP),
+    });
+
+    if (xpMultiplier > 1) {
+      printToTerminal(
+        `Gained ${boostedXP} XP! (${amount} × ${xpMultiplier.toFixed(
+          2
+        )} boost)`,
+        "success"
+      );
+    } else {
+      printToTerminal(`Gained ${boostedXP} XP!`, "success");
+    }
+
+    // Check for level up
+    await checkLevelUp(playerRef, playerStats.exp);
+  } catch (error) {
+    printToTerminal(
+      "Error adding experience points: " + error.message,
+      "error"
+    );
+  }
 }
 
 // Add this after the command handler
@@ -2537,7 +2829,687 @@ async function handleReset(args) {
   awaitingResetConfirmation = false;
 }
 
-window.updateBattleProgress = async function(args) {
+// Boss Battle definitions
+const BOSSES = {
+  SHADOW_KING: {
+    id: "shadow_king",
+    name: "Shadow King",
+    description:
+      "Train in the darkness to unlock your hidden strength. Complete 60 minutes of night training (after 8 PM).",
+    baseTargetCount: 60,
+    targetCount: 60,
+    metric: "minutes",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 200,  // Reduced from 500
+      gold: 100, // Reduced from 250
+      title: "Ruler of Shadows",
+    },
+    scaling: {
+      targetCount: 5,
+      rewards: {
+        exp: 25,  // Reduced from 75
+        gold: 15, // Reduced from 35
+      },
+    },
+  },
+
+  MONARCH_OF_FLESH: {
+    id: "monarch_of_flesh",
+    name: "Monarch of Flesh",
+    description:
+      "Push your body to its limit. Complete 150 push-ups within 24 hours.",
+    baseTargetCount: 150,
+    targetCount: 150,
+    metric: "push-ups",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 250,  // Reduced from 600
+      gold: 125, // Reduced from 300
+      title: "Body of a Warrior",
+    },
+    scaling: {
+      targetCount: 10,
+      rewards: {
+        exp: 30,  // Reduced from 100
+        gold: 20, // Reduced from 50
+      },
+    },
+  },
+
+  IRON_FIST: {
+    id: "iron_fist",
+    name: "Iron Fist",
+    description:
+      "Forge your fists in fire. Complete 200 push-ups in a single session.",
+    baseTargetCount: 200,
+    targetCount: 200,
+    metric: "push-ups",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 300,  // Reduced from 800
+      gold: 150, // Reduced from 400
+      title: "Unbreakable Fist",
+    },
+    scaling: {
+      targetCount: 20,
+      rewards: {
+        exp: 35,  // Reduced from 100
+        gold: 20, // Reduced from 50
+      },
+    },
+  },
+
+  CORE_OVERLORD: {
+    id: "core_overlord",
+    name: "Core Overlord",
+    description:
+      "Dominate your core. Complete 300 sit-ups in a single session.",
+    baseTargetCount: 300,
+    targetCount: 300,
+    metric: "sit-ups",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 350,  // Reduced from 900
+      gold: 175, // Reduced from 450
+      title: "Master of the Core",
+    },
+    scaling: {
+      targetCount: 30,
+      rewards: {
+        exp: 40,  // Reduced from 100
+        gold: 25, // Reduced from 50
+      },
+    },
+  },
+
+  PUSHUP_WARLORD: {
+    id: "pushup_warlord",
+    name: "Push-Up Warlord",
+    description:
+      "Conquer the ultimate push-up challenge. Complete 100 push-ups in 10 minutes.",
+    baseTargetCount: 100,
+    targetCount: 100,
+    metric: "push-ups",
+    timeLimit: 10 * 60 * 1000,
+    rewards: {
+      exp: 275,  // Reduced from 700
+      gold: 140, // Reduced from 350
+      title: "Push-Up Champion",
+    },
+    scaling: {
+      targetCount: 10,
+      rewards: {
+        exp: 30,  // Reduced from 75
+        gold: 15, // Reduced from 35
+      },
+    },
+  },
+
+  SITUP_SORCERER: {
+    id: "situp_sorcerer",
+    name: "Sit-Up Sorcerer",
+    description:
+      "Harness the magic of endurance. Complete 150 sit-ups in 15 minutes.",
+    baseTargetCount: 150,
+    targetCount: 150,
+    metric: "sit-ups",
+    timeLimit: 15 * 60 * 1000,
+    rewards: {
+      exp: 300,  // Reduced from 750
+      gold: 150, // Reduced from 375
+      title: "Core Mage",
+    },
+    scaling: {
+      targetCount: 15,
+      rewards: {
+        exp: 35,  // Reduced from 75
+        gold: 20, // Reduced from 35
+      },
+    },
+  },
+
+  PUSHUP_TITAN: {
+    id: "pushup_titan",
+    name: "Push-Up Titan",
+    description: "Prove your might. Complete 500 push-ups in a week.",
+    baseTargetCount: 500,
+    targetCount: 500,
+    metric: "push-ups",
+    timeLimit: 7 * 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 1000,
+      gold: 500,
+      title: "Titan of Push-Ups",
+    },
+    scaling: {
+      targetCount: 50,
+      rewards: {
+        exp: 150,
+        gold: 75,
+      },
+    },
+  },
+
+  SITUP_SENTINEL: {
+    id: "situp_sentinel",
+    name: "Sit-Up Sentinel",
+    description: "Guard your core. Complete 1,000 sit-ups in a week.",
+    baseTargetCount: 1000,
+    targetCount: 1000,
+    metric: "sit-ups",
+    timeLimit: 7 * 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 1200,
+      gold: 600,
+      title: "Core Sentinel",
+    },
+    scaling: {
+      targetCount: 100,
+      rewards: {
+        exp: 150,
+        gold: 75,
+      },
+    },
+  },
+
+  PUSHUP_PHANTOM: {
+    id: "pushup_phantom",
+    name: "Push-Up Phantom",
+    description: "Move like a shadow. Complete 50 push-ups in 5 minutes.",
+    baseTargetCount: 50,
+    targetCount: 50,
+    metric: "push-ups",
+    timeLimit: 5 * 60 * 1000,
+    rewards: {
+      exp: 600,
+      gold: 300,
+      title: "Shadow Pusher",
+    },
+    scaling: {
+      targetCount: 5,
+      rewards: {
+        exp: 50,
+        gold: 25,
+      },
+    },
+  },
+
+  SITUP_SPECTER: {
+    id: "situp_specter",
+    name: "Sit-Up Specter",
+    description: "Haunt your core. Complete 75 sit-ups in 7 minutes.",
+    baseTargetCount: 75,
+    targetCount: 75,
+    metric: "sit-ups",
+    timeLimit: 7 * 60 * 1000,
+    rewards: {
+      exp: 650,
+      gold: 325,
+      title: "Ghost of the Core",
+    },
+    scaling: {
+      targetCount: 7,
+      rewards: {
+        exp: 50,
+        gold: 25,
+      },
+    },
+  },
+
+  PUSHUP_DRAGON: {
+    id: "pushup_dragon",
+    name: "Push-Up Dragon",
+    description:
+      "Breathe fire into your arms. Complete 300 push-ups in 30 minutes.",
+    baseTargetCount: 300,
+    targetCount: 300,
+    metric: "push-ups",
+    timeLimit: 30 * 60 * 1000,
+    rewards: {
+      exp: 900,
+      gold: 450,
+      title: "Dragon of Strength",
+    },
+    scaling: {
+      targetCount: 30,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  SITUP_SERPENT: {
+    id: "situp_serpent",
+    name: "Sit-Up Serpent",
+    description: "Coil your core. Complete 200 sit-ups in 20 minutes.",
+    baseTargetCount: 200,
+    targetCount: 200,
+    metric: "sit-ups",
+    timeLimit: 20 * 60 * 1000,
+    rewards: {
+      exp: 800,
+      gold: 400,
+      title: "Serpent of the Core",
+    },
+    scaling: {
+      targetCount: 20,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  GATE_KEEPER: {
+    id: "gate_keeper",
+    name: "Gate Keeper",
+    description:
+      "Pass through the threshold of strength. Run 5 kilometers in a single session.",
+    baseTargetCount: 5,
+    targetCount: 5,
+    metric: "kilometers",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 700,
+      gold: 350,
+      title: "Breaker of Chains",
+    },
+    scaling: {
+      targetCount: 0.5,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  RULER_OF_STAMINA: {
+    id: "ruler_of_stamina",
+    name: "Ruler of Stamina",
+    description:
+      "Survive the test of endurance. Burn 2,000 calories in a week.",
+    baseTargetCount: 2000,
+    targetCount: 2000,
+    metric: "calories",
+    timeLimit: 7 * 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 800,
+      gold: 400,
+      title: "Everlasting Hunter",
+    },
+    scaling: {
+      targetCount: 200,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  TITAN_SLAYER: {
+    id: "titan_slayer",
+    name: "Titan Slayer",
+    description:
+      "Overcome the mightiest. Lift a total of 5,000 kg in weight training.",
+    baseTargetCount: 5000,
+    targetCount: 5000,
+    metric: "kilograms lifted",
+    timeLimit: 7 * 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 1000,
+      gold: 500,
+      title: "Crusher of Giants",
+    },
+    scaling: {
+      targetCount: 500,
+      rewards: {
+        exp: 150,
+        gold: 75,
+      },
+    },
+  },
+  PHANTOM_RUNNER: {
+    id: "phantom_runner",
+    name: "Phantom Runner",
+    description: "Outpace the unseen. Run 10 kilometers in under 60 minutes.",
+    baseTargetCount: 10,
+    targetCount: 10,
+    metric: "kilometers",
+    timeLimit: 60 * 60 * 1000,
+    rewards: {
+      exp: 750,
+      gold: 375,
+      title: "Speed Demon",
+    },
+    scaling: {
+      targetCount: 1,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  IRON_WILL: {
+    id: "iron_will",
+    name: "Iron Will",
+    description: "Forge your mind and body. Hold a plank for 5 minutes.",
+    baseTargetCount: 5,
+    targetCount: 5,
+    metric: "minutes",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 400,
+      gold: 200,
+      title: "Unbreakable",
+    },
+    scaling: {
+      targetCount: 0.5,
+      rewards: {
+        exp: 50,
+        gold: 25,
+      },
+    },
+  },
+
+  STORM_CALLER: {
+    id: "storm_caller",
+    name: "Storm Caller",
+    description: "Summon the storm within. Complete 100 burpees in 20 minutes.",
+    baseTargetCount: 100,
+    targetCount: 100,
+    metric: "burpees",
+    timeLimit: 20 * 60 * 1000,
+    rewards: {
+      exp: 600,
+      gold: 300,
+      title: "Thunder Lord",
+    },
+    scaling: {
+      targetCount: 10,
+      rewards: {
+        exp: 75,
+        gold: 35,
+      },
+    },
+  },
+
+  ABYSS_WALKER: {
+    id: "abyss_walker",
+    name: "Abyss Walker",
+    description:
+      "Descend into the depths. Perform 50 pull-ups in a single session.",
+    baseTargetCount: 50,
+    targetCount: 50,
+    metric: "pull-ups",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 700,
+      gold: 350,
+      title: "Void Strider",
+    },
+    scaling: {
+      targetCount: 5,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  FLAME_EMPEROR: {
+    id: "flame_emperor",
+    name: "Flame Emperor",
+    description:
+      "Burn with intensity. Complete 30 minutes of high-intensity interval training (HIIT).",
+    baseTargetCount: 30,
+    targetCount: 30,
+    metric: "minutes",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 550,
+      gold: 275,
+      title: "Inferno Lord",
+    },
+    scaling: {
+      targetCount: 2,
+      rewards: {
+        exp: 75,
+        gold: 35,
+      },
+    },
+  },
+
+  FROST_GIANT: {
+    id: "frost_giant",
+    name: "Frost Giant",
+    description: "Endure the cold. Swim 1 kilometer in open water or a pool.",
+    baseTargetCount: 1,
+    targetCount: 1,
+    metric: "kilometers",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 650,
+      gold: 325,
+      title: "Ice Breaker",
+    },
+    scaling: {
+      targetCount: 0.2,
+      rewards: {
+        exp: 75,
+        gold: 35,
+      },
+    },
+  },
+
+  EARTH_SHAKER: {
+    id: "earth_shaker",
+    name: "Earth Shaker",
+    description:
+      "Shake the ground beneath you. Perform 200 squats in a single session.",
+    baseTargetCount: 200,
+    targetCount: 200,
+    metric: "squats",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 800,
+      gold: 400,
+      title: "Titan of Strength",
+    },
+    scaling: {
+      targetCount: 20,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  WIND_RIDER: {
+    id: "wind_rider",
+    name: "Wind Rider",
+    description:
+      "Ride the winds of speed. Cycle 20 kilometers in a single session.",
+    baseTargetCount: 20,
+    targetCount: 20,
+    metric: "kilometers",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 700,
+      gold: 350,
+      title: "Gale Force",
+    },
+    scaling: {
+      targetCount: 2,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  VOID_SEEKER: {
+    id: "void_seeker",
+    name: "Void Seeker",
+    description: "Seek the unknown. Meditate for 30 minutes daily for 7 days.",
+    baseTargetCount: 7,
+    targetCount: 7,
+    metric: "days",
+    timeLimit: 7 * 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 900,
+      gold: 450,
+      title: "Mind of the Void",
+    },
+    scaling: {
+      targetCount: 1,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+
+  BLAZE_ARCHER: {
+    id: "blaze_archer",
+    name: "Blaze Archer",
+    description:
+      "Strike with precision. Complete 100 archery shots or similar precision training.",
+    baseTargetCount: 100,
+    targetCount: 100,
+    metric: "shots",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 600,
+      gold: 300,
+      title: "Eagle Eye",
+    },
+    scaling: {
+      targetCount: 10,
+      rewards: {
+        exp: 75,
+        gold: 35,
+      },
+    },
+  },
+
+  THUNDER_GOD: {
+    id: "thunder_god",
+    name: "Thunder God",
+    description:
+      "Channel the power of thunder. Perform 50 box jumps in 10 minutes.",
+    baseTargetCount: 50,
+    targetCount: 50,
+    metric: "box jumps",
+    timeLimit: 10 * 60 * 1000,
+    rewards: {
+      exp: 650,
+      gold: 325,
+      title: "Storm Bringer",
+    },
+    scaling: {
+      targetCount: 5,
+      rewards: {
+        exp: 75,
+        gold: 35,
+      },
+    },
+  },
+
+  MOONLIGHT_ASSASSIN: {
+    id: "moonlight_assassin",
+    name: "Moonlight Assassin",
+    description:
+      "Move in silence. Complete 30 minutes of yoga or flexibility training.",
+    baseTargetCount: 30,
+    targetCount: 30,
+    metric: "minutes",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 500,
+      gold: 250,
+      title: "Shadow Dancer",
+    },
+    scaling: {
+      targetCount: 2,
+      rewards: {
+        exp: 50,
+        gold: 25,
+      },
+    },
+  },
+
+  STARGAZER: {
+    id: "stargazer",
+    name: "Stargazer",
+    description:
+      "Reach for the stars. Climb 500 meters on a climbing wall or rock face.",
+    baseTargetCount: 500,
+    targetCount: 500,
+    metric: "meters climbed",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 800,
+      gold: 400,
+      title: "Celestial Climber",
+    },
+    scaling: {
+      targetCount: 50,
+      rewards: {
+        exp: 100,
+        gold: 50,
+      },
+    },
+  },
+  DRAGON_TAMER: {
+    id: "dragon_tamer",
+    name: "Dragon Tamer",
+    description:
+      "Tame the beast within. Complete 3 consecutive days of intense training.",
+    baseTargetCount: 3,
+    targetCount: 3,
+    metric: "days",
+    timeLimit: 3 * 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 1000,
+      gold: 500,
+      title: "Beast Master",
+    },
+    scaling: {
+      targetCount: 1,
+      rewards: {
+        exp: 150,
+        gold: 75,
+      },
+    },
+  },
+  ETERNAL_GUARDIAN: {
+    id: "eternal_guardian",
+    name: "Eternal Guardian",
+    description: "Protect the realm. Complete 10,000 steps in a single day.",
+    baseTargetCount: 10000,
+    targetCount: 10000,
+    metric: "steps",
+    timeLimit: 24 * 60 * 60 * 1000,
+    rewards: {
+      exp: 700,
+      gold: 350,
+      title: "Guardian of Eternity",
+    },
+    scaling: {
+      targetCount: 500,
+      rewards: {
+        exp: 75,
+        gold: 35,
+      },
+    },
+  },
+};
+  
+
+async function updateBattleProgress(args) {
   if (!isAuthenticated) {
     printToTerminal("You must !reawaken first.", "error");
     return;
@@ -2637,6 +3609,7 @@ window.updateBattleProgress = async function(args) {
 
       audioSystem.playVoiceLine('BOSS_VICTORY');
       printToTerminal(`You have defeated ${boss.name}!`, "success");
+      attemptShardDrop();
     } else {
       // Update progress
       await activeBattleRef.update({
@@ -3096,7 +4069,7 @@ async function setPlayerClass(args) {
 }
 
 // Window System
-window.windowSystem = {
+const windowSystem = {
   windows: {
     profileWindow: document.getElementById("profileWindow"),
     questsWindow: document.getElementById("questsWindow"),
@@ -3146,6 +4119,11 @@ window.windowSystem = {
       id: "shadowArmyWindow",
       icon: "fa-ghost",
       title: "Shadow Army",
+    },
+    {
+      id: "soloInterfaceWindow",
+      icon: "fa-robot",
+      title: "SOLO Interface",
     },
   ],
 
@@ -3232,6 +4210,11 @@ window.windowSystem = {
         id: "shadowArmyWindow",
         icon: "fa-user-secret",
         title: "Shadow Army",
+      },
+      {
+        id: "soloInterfaceWindow",
+        icon: "fa-robot",
+        title: "SOLO Interface",
       },
     ];
 
@@ -4196,118 +5179,151 @@ window.windowSystem = {
     }
   },
 
-  async updateInventoryWindow() {
-    if (!currentUser) return;
-    try {
-      const playerRef = db.collection("players").doc(currentUser.uid);
-      const player = (await playerRef.get()).data();
-      const inventoryList = document.getElementById("inventoryItemsList");
-      inventoryList.innerHTML = "";
 
-      if (!player.inventory || player.inventory.length === 0) {
-        inventoryList.innerHTML =
-          '<div class="window-item">Your inventory is empty</div>';
-        return;
+async updateInventoryWindow() {
+  if (!currentUser) return;
+  try {
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    const player = (await playerRef.get()).data();
+    const inventoryList = document.getElementById("inventoryItemsList");
+    inventoryList.innerHTML = "";
+
+    if (!player.inventory || player.inventory.length === 0) {
+      inventoryList.innerHTML =
+        '<div class="window-item">Your inventory is empty</div>';
+      return;
+    }
+
+    // Group inventory items by ID to handle stackable items
+    const groupedInventory = player.inventory.reduce((acc, item) => {
+      if (!acc[item.id]) {
+        acc[item.id] = { ...item, quantity: 1 };
+      } else {
+        acc[item.id].quantity++;
       }
+      return acc;
+    }, {});
 
-      player.inventory.forEach((inventoryItem) => {
-        const item = Object.values(ITEMS).find(
-          (item) => item.id === inventoryItem.id
-        );
-        if (item) {
-          const itemElement = document.createElement("div");
-          itemElement.className = "window-item";
+    for (const itemId in groupedInventory) {
+      const item = groupedInventory[itemId];
+      const itemData = Object.values(ITEMS).find(
+        (i) => i.id === itemId
+      ) || item; // Handle shards directly if not found in ITEMS
 
-          const isExpired =
-            inventoryItem.expiresAt && inventoryItem.expiresAt <= Date.now();
-          const timeLeft = inventoryItem.expiresAt
-            ? Math.max(0, inventoryItem.expiresAt - Date.now())
-            : null;
+      if (itemData) {
+        const itemElement = document.createElement("div");
+        itemElement.className = "window-item";
 
-          if (isExpired) {
-            itemElement.classList.add("expired-item");
-          }
+        const isExpired =
+          item.expiresAt && item.expiresAt <= Date.now();
+        const timeLeft = item.expiresAt
+          ? Math.max(0, item.expiresAt - Date.now())
+          : null;
 
-          // Check if item is usable
-          const isUsable =
-            item.effect &&
-            (item.effect.type === "name_color" ||
-              item.effect.type === "gold" ||
-              item.effect.type === "complete_quest" ||
-              item.effect.type === "reset_daily" ||
-              item.effect.type === "remove_fatigue" ||
-              item.effect.type === "title" ||
-              item.effect.type === "title_color");
+        if (isExpired) {
+          itemElement.classList.add("expired-item");
+        }
 
-          itemElement.innerHTML = `
-            <div class="window-item-title">${item.name}</div>
-            <div class="window-item-description">${item.description}</div>
-            ${
-              timeLeft !== null
-                ? `<div class="window-item-description ${
-                    isExpired ? "text-error" : ""
-                  }">
+        // Check if item is usable or a shard
+        const isUsable =
+          itemData.effect ||
+          itemData.type === "shard"; // Shards are considered usable
+
+        // Calculate total XP and gold for shards
+        let xpReward = 0;
+        let goldReward = 0;
+        if (itemData.type === "shard") {
+          const shards = player.inventory.filter(i => i.id === itemId);
+          xpReward = shards.reduce((sum, shard) => sum + shard.xpValue, 0);
+          goldReward = shards.reduce((sum, shard) => sum + shard.goldValue, 0);
+        }
+
+        itemElement.innerHTML = `
+          <div class="window-item-title">${itemData.name} x${item.quantity}</div>
+          <div class="window-item-description">${itemData.description}</div>
+          ${
+            timeLeft !== null
+              ? `<div class="window-item-description ${
+                  isExpired ? "text-error" : ""
+                }">
                   ${
                     isExpired
                       ? "EXPIRED"
                       : `Time remaining: ${Math.ceil(timeLeft / 60000)} minutes`
                   }
                  </div>`
-                : ""
-            }
-            <div class="window-actions">
-              ${
-                isExpired
-                  ? `<div class="window-item-price">Sell price: ${calculateSellPrice(
-                      item
-                    )} gold</div>
+              : ""
+          }
+          ${
+            itemData.type === "shard"
+              ? `<div class="window-item-description">
+                  Rewards: ${xpReward} XP, ${goldReward} gold (product of ${item.quantity} shards)
+                </div>`
+              : ""
+          }
+          <div class="window-actions">
+            ${
+              isExpired
+                ? `<div class="window-item-price">Sell price: ${calculateSellPrice(
+                    itemData
+                  )} gold</div>
+                 <button onclick="sellItem('${
+                   itemData.id
+                 }')" class="window-button">Sell</button>`
+                : isUsable
+                ? itemData.type === "shard"
+                  ? item.quantity > 1
+                    ? `
+                      <button onclick="useShard('${itemData.id}', ${item.quantity})" class="window-button">Use All</button>
+                      <button onclick="sellShard('${itemData.id}', ${item.quantity})" class="window-button">Sell All</button>
+                    `
+                    : `
+                      <button onclick="useShard('${itemData.id}', 1)" class="window-button">Use</button>
+                      <button onclick="sellShard('${itemData.id}', 1)" class="window-button">Sell</button>
+                    `
+                  : `<button onclick="useItem('${itemData.id}')" class="window-button">Use</button>`
+                : `<div class="window-item-price">Sell price: ${calculateSellPrice(
+                    itemData
+                  )} gold</div>
                    <button onclick="sellItem('${
-                     item.id
+                     itemData.id
                    }')" class="window-button">Sell</button>`
-                  : isUsable
-                  ? `<button onclick="useItem('${item.id}')" class="window-button">Use</button>`
-                  : `<div class="window-item-price">Sell price: ${calculateSellPrice(
-                      item
-                    )} gold</div>
-                     <button onclick="sellItem('${
-                       item.id
-                     }')" class="window-button">Sell</button>`
-              }
-            </div>
-          `;
-          inventoryList.appendChild(itemElement);
-        }
-      });
-
-      // Add CSS if not already present
-      if (!document.getElementById("inventoryStyles")) {
-        const styleSheet = document.createElement("style");
-        styleSheet.id = "inventoryStyles";
-        styleSheet.textContent = `
-          .window-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            align-items: center;
-            margin-top: 10px;
-          }
-          .window-item-price {
-            color: #00ffff;
-            font-size: 0.9em;
-          }
-          .expired-item {
-            opacity: 0.7;
-          }
-          .text-error {
-            color: #ff4444;
-          }
+            }
+          </div>
         `;
-        document.head.appendChild(styleSheet);
+        inventoryList.appendChild(itemElement);
       }
-    } catch (error) {
-      console.error("Error updating inventory window:", error);
     }
-  },
+
+    // Add CSS if not already present
+    if (!document.getElementById("inventoryStyles")) {
+      const styleSheet = document.createElement("style");
+      styleSheet.id = "inventoryStyles";
+      styleSheet.textContent = `
+        .window-actions {
+          display: flex;
+          gap: 10px;
+          justify-content: flex-end;
+          align-items: center;
+          margin-top: 10px;
+        }
+        .window-item-price {
+          color: #00ffff;
+          font-size: 0.9em;
+        }
+        .expired-item {
+          opacity: 0.7;
+        }
+        .text-error {
+          color: #ff4444;
+        }
+      `;
+      document.head.appendChild(styleSheet);
+    }
+  } catch (error) {
+    console.error("Error updating inventory window:", error);
+  }
+},
 
   async updateBattleWindow() {
     try {
@@ -4790,74 +5806,6 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 
-// Profile system
-async function showProfile() {
-  if (!isAuthenticated) {
-    printToTerminal("You must !reawaken first.", "error");
-    return;
-  }
-
-  const playerRef = db.collection("players").doc(currentUser.uid);
-  const player = (await playerRef.get()).data();
-
-  // Ensure profile exists
-  if (!player.profile) {
-    player.profile = {
-      name: "",
-      title: "Novice",
-      picture: "default.png",
-      bio: "",
-      class: "Hunter",
-      joinDate: null,
-    };
-    // Update the player document with initialized profile
-    await playerRef.update({ profile: player.profile });
-  }
-
-  printToTerminal("\n=== PLAYER PROFILE ===", "system");
-  printToTerminal(`Name: ${player.profile.name || "Not set"}`, "info");
-  printToTerminal(`Title: ${player.profile.title || "Novice"}`, "info");
-  printToTerminal(`Class: ${player.profile.class || "Hunter"}`, "info");
-  if (player.profile.bio) {
-    printToTerminal(`\nBio: ${player.profile.bio}`, "info");
-  }
-  printToTerminal("\nStats:", "info");
-  printToTerminal(`Level: ${player.level}`, "info");
-  printToTerminal(`EXP: ${player.exp}/100`, "info");
-  printToTerminal(`Gold: ${player.gold}`, "info");
-  printToTerminal(`Rank: ${player.rank}`, "info");
-  printToTerminal(`Daily Streak: ${player.streak} days`, "info");
-  printToTerminal(`Quests Completed: ${player.questsCompleted}`, "info");
-
-
-  if (player.waterIntake?.streakDays > 0) {
-    printToTerminal(
-      `Water Streak: ${player.waterIntake.streakDays} days`,
-      "info"
-    );
-  }
-
-  printToTerminal("\nAchievements:", "info");
-  if (!player.achievements || player.achievements.length === 0) {
-    printToTerminal("No achievements yet", "warning");
-  } else {
-    player.achievements.forEach((achievementId) => {
-      const achievement = Object.values(ACHIEVEMENTS).find(
-        (a) => a.id === achievementId
-      );
-      if (achievement) {
-        printToTerminal(`- ${achievement.name}`, "info");
-      }
-    });
-  }
-
-  printToTerminal("\nProfile Commands:", "system");
-  printToTerminal("!setname <name> - Set your hunter name", "info");
-  printToTerminal("!settitle <title> - Set your title", "info");
-  printToTerminal("!setbio <text> - Set your profile bio", "info");
-  printToTerminal("!setclass <class> - Set your hunter class", "info");
-}
-
 // Add prompt functions for profile settings
 function showSetNamePrompt() {
   const name = prompt("Enter your new name:");
@@ -4875,7 +5823,7 @@ function showSetTitlePrompt() {
   }
 }
 
-window.showSetClassPrompt = function() {
+function showSetClassPrompt() {
   const validClasses = ["Hunter", "Healer", "Tank", "Assassin"];
   const className = prompt(
     `Enter your new class (${validClasses.join(", ")}):`
@@ -4889,7 +5837,7 @@ window.showSetClassPrompt = function() {
 }
 
 // Add purchase function for shop
-window.purchaseItem = async function(itemId) {
+async function purchaseItem(itemId) {
   if (!isAuthenticated) {
     printToTerminal("You must !reawaken first.", "error");
     return;
@@ -4909,13 +5857,6 @@ window.purchaseItem = async function(itemId) {
 
   // Play purchase sound immediately
   notificationSystem.playSound("buy");
-
-  // Disable the buy button to prevent multiple clicks
-  const buyButton = document.querySelector(`#buy-button-${itemId}`);
-  if (buyButton) {
-    buyButton.disabled = true;
-    buyButton.innerText = "Purchasing..."; // Optional: Change button text
-  }
 
   try {
     const playerRef = db.collection("players").doc(currentUser.uid);
@@ -4942,15 +5883,62 @@ window.purchaseItem = async function(itemId) {
     windowSystem.updateWindowContent("inventoryWindow");
   } catch (error) {
     printToTerminal("Error purchasing item: " + error.message, "error");
-  } finally {
-    // Re-enable the buy button after processing
-    if (buyButton) {
-      buyButton.disabled = false;
-      buyButton.innerText = "Buy"; // Reset button text
-    }
   }
-};
+}
 
+async function sellItem(itemId) {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
+
+  const playerRef = db.collection("players").doc(currentUser.uid);
+  const playerDoc = await playerRef.get();
+  const playerData = playerDoc.data();
+
+  // Find the item in the player's inventory
+  const inventoryItem = playerData.inventory.find((item) => item.id === itemId);
+  if (!inventoryItem) {
+    printToTerminal("Item not found in your inventory.", "error");
+    return;
+  }
+
+  const item = Object.values(ITEMS).find((item) => item.id === itemId);
+  if (!item) {
+    printToTerminal("Invalid item.", "error");
+    return;
+  }
+
+  // Play sell sound immediately
+  notificationSystem.playSound("sell");
+
+  try {
+    const sellPrice = calculateSellPrice(item);
+
+    // Remove item from inventory and add gold
+    await playerRef.update({
+      gold: firebase.firestore.FieldValue.increment(sellPrice),
+      inventory: firebase.firestore.FieldValue.arrayRemove(inventoryItem),
+    });
+
+    // Update local stats
+    playerStats.gold += sellPrice;
+    playerStats.inventory = playerStats.inventory.filter(
+      (item) => item.id !== itemId
+    );
+
+    printToTerminal(
+      `Sold ${item.name} for ${sellPrice} gold! (50% of original price)`,
+      "success"
+    );
+    showNotification(`Sold ${item.name} for ${sellPrice} gold!`);
+    updateStatusBar();
+    windowSystem.updateWindowContent("shopWindow");
+    windowSystem.updateWindowContent("inventoryWindow");
+  } catch (error) {
+    printToTerminal("Error selling item: " + error.message, "error");
+  }
+}
 
 window.addEventListener("load", function () {
   setTimeout(function () {
@@ -4963,7 +5951,7 @@ window.addEventListener("load", function () {
 });
 
 // Add bio prompt function
-window.showSetBioPrompt = function() {
+function showSetBioPrompt() {
   const bio = prompt("Enter your bio:");
   if (bio) {
     const playerRef = db.collection("players").doc(currentUser.uid);
@@ -5433,8 +6421,9 @@ async function updateInventoryWindow() {
 
 // Make functions available to the window
 window.useItem = useItem;
-// Make sellItem globally accessible
-window.sellItem = async function(itemId) {
+
+// Add function to sell an item
+async function sellItem(itemId) {
   if (!isAuthenticated) {
     printToTerminal("You must !reawaken first.", "error");
     return;
@@ -5486,7 +6475,8 @@ window.sellItem = async function(itemId) {
   } catch (error) {
     printToTerminal("Error selling item: " + error.message, "error");
   }
-};
+}
+
 // Add function to show color picker dialog
 async function showColorPickerDialog() {
   return new Promise((resolve) => {
@@ -5599,425 +6589,63 @@ const RANK_REQUIREMENTS = {
   },
 };
 
+function checkRankProgress(player) {
+  const currentRank = player.rank || "E";
+  const nextRank = RANKS[RANKS.indexOf(currentRank) + 1];
 
-// Add speech recognition system
-const speechRecognitionSystem = {
-  recognition: null,
-  isActivated: false,
-  micButton: null,
-  isListening: false,
-
-  commandVariations: {
-    // Help commands
-    help: ["help", "commands", "options", "what can i do", "what to do", "show commands", "show help", "command list"],
-    
-    // Core commands
-    reawaken: ["reawaken", "wake up", "start", "begin", "initialize", "login"],
-    quests: ["quest", "quests", "tasks", "missions", "objectives", "show quests", "view quests", "normal quests"],
-    dailyquests: ["daily", "daily quest", "daily quests", "daily tasks", "daily missions", "dailies", "show daily quests"],
-    clear: ["clear", "clean", "reset", "wipe", "clear terminal", "clear screen"],
-    sleep: ["sleep", "logout", "log out", "exit", "quit"],
-    
-    // Status and Progress
-    leaderboard: ["leaderboard", "rankings", "leaders", "top players", "show leaderboard", "rankings"],
-    achievements: ["achievements", "achieve", "badges", "trophies", "show achievements"],
-    profile: ["profile", "stats", "status", "character", "show profile", "my profile"],
-    inventory: ["inventory", "items", "backpack", "stuff", "gear", "show inventory", "my items"],
-    shop: ["shop", "store", "market", "buy", "show shop", "marketplace"],
-    notifications: ["notifications", "notification", "alerts", "show notifications", "view notifications", "my notifications", "check notifications", "show alerts", "check alerts"],
-    
-    // Experience and Progress
-    addxp: ["add xp", "add experience", "gain xp", "experience points", "add points"],
-    reset: ["reset progress", "reset game", "reset all", "start over"],
-    
-    // Battle System
-    battle: ["battle", "battles", "boss battle", "boss battles", "show battles", "view battles", "show boss battles"],
-    challenge: ["challenge", "start battle", "fight boss", "begin battle", "start boss battle", "challenge boss"],
-    progress: ["battle progress", "fight progress", "update battle", "battle status", "boss progress"],
-    
-    // Water Tracking
-    waterDrank: ["water drank", "drink water", "water intake", "hydrate", "log water", "add water", "drank water"],
-    waterStatus: ["water status", "hydration status", "water progress", "check water", "show water", "view water"],
-    
-    // Motivation
-    motivation: ["motivation", "motivate", "inspire", "encourage", "show motivation", "need motivation"],
-    
-    // Player Customization
-    setname: ["set name", "change name", "update name", "my name", "new name"],
-    settitle: ["set title", "change title", "update title", "my title", "new title"],
-    setbio: ["set bio", "change bio", "update bio", "my bio", "biography", "new bio"],
-    setclass: ["set class", "change class", "update class", "my class", "new class"],
-    
-    // Quest Management
-    simulate: ["simulate", "simulate quest", "test quest", "quest timeout", "test timeout"],
-    rank: ["rank", "my rank", "show rank", "rank status", "current rank"],
-    rankprogress: ["rank progress", "show rank progress", "rank status", "rank advancement", "check rank"],
-    penalty: ["penalty", "show penalty", "view penalty", "check penalty"],
-    delete: ["delete quest", "remove quest", "delete task", "remove task"],
-    questid: ["quest id", "quest ids", "show quest ids", "view quest ids", "show ids"],
-    shadowarmy: ["shadow army", "show shadows", "my shadows", "view shadow army", "shadows", "show shadow army"],
-    
-    // Quest Completion Commands
-    completedaily: ["complete all daily", "finish all daily", "complete daily quests", "finish daily quests", "complete all daily quests", "finish all dailies"],
-    completenormal: ["complete all normal", "finish all normal", "complete normal quests", "finish normal quests", "complete all normal quests", "finish all normal quests"],
-    update: ["update quest", "update progress", "quest progress", "task progress", "update task"],
-    
-    // Window Commands
-    close: ["close", "hide", "minimize", "collapse", "close window"],
-    open: ["open", "show", "display", "view", "go to", "check", "see", "open window"],
-    toggle: ["toggle", "switch", "enable", "disable", "activate", "deactivate"]
-  },
-
-  init() {
-    try {
-      this.recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-      this.recognition.continuous = true;
-    this.recognition.interimResults = false;
-    this.recognition.lang = 'en-US';
-
-    this.recognition.onresult = (event) => {
-        const text = event.results[event.results.length - 1][0].transcript.toLowerCase().trim();
-      console.log('Raw voice input:', text);
-        
-        // Always check for activation phrase
-        if (!this.isActivated && text.includes('activate voice')) {
-          this.isActivated = true;
-          showNotification("Voice commands activated! You can now speak commands.", "success");
-          notificationSystem.playSound("activated");
-          this.updateMicButton();
-          return;
-        }
-
-        // Only process other commands if activated
-        if (this.isActivated) {
-          // Check for deactivation
-          if (text.includes('deactivate voice') || text.includes('disable voice')) {
-            this.isActivated = false;
-            showNotification("Voice commands deactivated. Say 'activate voice' to enable again.", "warning");
-            this.updateMicButton();
-            return;
-          }
-
-      const command = this.processVoiceCommand(text);
-      if (command) {
-        console.log('Processed command:', command);
-            // Show visual feedback in input
-            const input = document.querySelector('#terminal-input');
-            if (input) {
-              input.value = command;
-            }
-            
-            // Execute the command if it exists
-            if (commands[command]) {
-              commands[command]();
-              showNotification(`Executing: ${command}`, "success");
-            } else {
-              printToTerminal(`Command not recognized: ${text}`, "error");
-              showNotification("Command not recognized. Try again.", "error");
-            }
-
-            // Clear the input after processing
-            setTimeout(() => {
-              if (input) {
-                input.value = "";
-              }
-            }, 100);
-          }
-        }
+  // If player is at max rank, return early
+  if (!nextRank) {
+    return {
+      currentRank,
+      nextRank: null,
+      progress: {
+        level: 100,
+        quests: 100,
+        achievements: 100,
+        overall: 100,
+      },
     };
+  }
 
-    this.recognition.onerror = (event) => {
-      console.error('Speech recognition error:', event.error);
-        if (event.error === 'not-allowed') {
-          showNotification('Microphone access denied. Please enable microphone permissions.', 'error');
-          this.isListening = false;
-          this.isActivated = false;
-          this.updateMicButton();
-        } else {
-      this.restartListening();
-        }
-    };
+  // Get requirements for next rank
+  const nextRankReqs = RANK_REQUIREMENTS[nextRank];
 
-    this.recognition.onend = () => {
-        console.log('Speech recognition ended');
-        this.isListening = false;
-        // Always restart listening, regardless of activation state
-        this.restartListening();
-    };
+  // Calculate progress percentages
+  const levelProgress = Math.min(
+    100,
+    ((player.level || 1) / nextRankReqs.level) * 100
+  );
+  const questProgress = Math.min(
+    100,
+    ((player.questsCompleted || 0) / nextRankReqs.quests) * 100
+  );
+  const achievementProgress = Math.min(
+    100,
+    ((player.achievements?.length || 0) / nextRankReqs.achievements) * 100
+  );
+  const overallProgress = Math.min(
+    100,
+    (levelProgress + questProgress + achievementProgress) / 3
+  );
 
-    this.addMicrophoneButton();
-      // Start listening immediately
-      this.startListening();
-      console.log('Speech recognition initialized successfully');
-    } catch (error) {
-      console.error('Error initializing speech recognition:', error);
-      showNotification('Failed to initialize speech recognition', 'error');
-    }
-  },
+  return {
+    currentRank,
+    nextRank,
+    progress: {
+      level: Math.round(levelProgress),
+      quests: Math.round(questProgress),
+      achievements: Math.round(achievementProgress),
+      overall: Math.round(overallProgress),
+    },
+    requirements: nextRankReqs,
+    currentValues: {
+      level: player.level || 1,
+      questsCompleted: player.questsCompleted || 0,
+      achievements: player.achievements?.length || 0,
+    },
+  };
+}
 
-  startListening() {
-    if (!this.recognition || this.isListening) return;
-
-    try {
-      console.log("Starting speech recognition...");
-      this.recognition.start();
-      this.isListening = true;
-      this.updateMicButton();
-      console.log("Speech recognition started successfully");
-    } catch (error) {
-      console.error("Error starting speech recognition:", error);
-      if (error.name === 'NotAllowedError') {
-        showNotification('Microphone access denied. Please enable microphone permissions.', 'error');
-        this.isListening = false;
-        this.isActivated = false;
-        this.updateMicButton();
-      } else {
-        setTimeout(() => this.restartListening(), 1000);
-      }
-    }
-  },
-
-  restartListening() {
-    if (!this.recognition || this.isListening) return;
-
-    try {
-      this.recognition.stop();
-      setTimeout(() => {
-        // Always restart listening, regardless of activation state
-        this.startListening();
-      }, 250);
-    } catch (error) {
-      console.error("Error restarting speech recognition:", error);
-      setTimeout(() => this.startListening(), 1000);
-    }
-  },
-
-  updateMicButton() {
-    if (this.micButton) {
-      if (!this.isListening) {
-        this.micButton.classList.remove("activated");
-        this.micButton.classList.remove("listening");
-        this.micButton.title = "Microphone not active";
-        this.micButton.innerHTML = '<i class="fas fa-microphone-slash"></i>';
-      } else if (this.isActivated) {
-        this.micButton.classList.add("activated");
-        this.micButton.classList.add("listening");
-        this.micButton.title = "Voice commands active. Say 'deactivate voice' to disable";
-        this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
-      } else {
-        this.micButton.classList.remove("activated");
-        this.micButton.classList.add("listening");
-        this.micButton.title = "Listening for 'activate voice'";
-        this.micButton.innerHTML = '<i class="fas fa-microphone"></i>';
-      }
-    }
-  },
-
-  processVoiceCommand(text) {
-    console.log("Processing voice command:", text);
-    let processedText = text.toLowerCase().trim();
-
-    // Clean up common phrases first
-    processedText = processedText
-      .replace(/^(what are|what is|what's)\s+/i, "show ")
-      .replace(/^(i want to|let me|can i|please)\s+/i, "")
-      .replace(/^(start|begin|initiate)\s+/i, "")
-      .replace(/\b(my|the)\s+/i, "")
-      .replace(/\s+(window|screen|page)$/i, "")
-      .replace(/\b(um|uh|like|so|yeah|well)\b/g, "");
-
-    // Handle complete all quests commands first
-    if (processedText.match(/^(complete|finish)\s+all\s+(daily|normal)/i)) {
-      const type = processedText.match(/daily|normal/i)[0].toLowerCase();
-      return `!${type}quests`;
-    }
-
-    // Handle window closing commands
-    const closeMatch = processedText.match(/^(close|hide)\s+([\w\s]+)\s+window$/i);
-    if (closeMatch) {
-      const windowName = closeMatch[2].trim();
-      const windowId = this.findWindowId(windowName);
-      if (windowId) {
-          windowSystem.closeWindow(windowId);
-        return null;
-      }
-    }
-
-    // Handle window opening commands
-    const openMatch = processedText.match(/^(open|show|display|view|go to)\s+([\w\s]+)(?:\s+window)?$/i);
-    if (openMatch) {
-      const windowName = openMatch[2].trim();
-      const windowId = this.findWindowId(windowName);
-      if (windowId) {
-        windowSystem.showWindow(windowId);
-        return null;
-      }
-    }
-
-    // Handle complete specific quest commands
-    const completeSpecificMatch = processedText.match(/^(complete|finish|do)\s+(daily|normal)\s+(.+?)(?:\s+quest)?$/i);
-    if (completeSpecificMatch) {
-      const questType = completeSpecificMatch[2];
-      const questName = completeSpecificMatch[3];
-      return `!update ${questName} ${questType.toLowerCase()} complete`;
-    }
-
-    // Check for direct command variations
-    for (const [baseCommand, variations] of Object.entries(this.commandVariations)) {
-      if (variations.some(v => processedText.includes(v.toLowerCase()))) {
-        return `!${baseCommand}`;
-      }
-    }
-
-    // If no direct match found, try fuzzy matching
-    const availableCommands = Object.keys(this.commandVariations);
-    const cleanText = processedText.replace(/[^a-z0-9]/g, "");
-    const { command: bestMatch, similarity } = this.findBestMatch(cleanText, availableCommands);
-
-    if (bestMatch) {
-      console.log(`Fuzzy matched "${processedText}" to "!${bestMatch}" with similarity ${similarity}`);
-      return `!${bestMatch}`;
-    }
-
-    return null;
-  },
-
-  findWindowId(windowName) {
-    const normalizedName = windowName.toLowerCase();
-    const windowMap = {
-      'daily quest': 'dailyQuestsWindow',
-      'daily quests': 'dailyQuestsWindow',
-      'quest': 'questsWindow',
-      'quests': 'questsWindow',
-      'achievement': 'achievementsWindow',
-      'achievements': 'achievementsWindow',
-      'inventory': 'inventoryWindow',
-      'profile': 'profileWindow',
-      'shop': 'shopWindow',
-      'leaderboard': 'leaderboardWindow',
-      'boss': 'bossBattlesWindow',
-      'boss battle': 'bossBattlesWindow',
-      'boss battles': 'bossBattlesWindow',
-      'notifications': 'notificationsWindow',
-      'notification': 'notificationsWindow',
-      'alerts': 'notificationsWindow',
-      'rank': 'rankProgressWindow',
-      'rank progress': 'rankProgressWindow',
-      'shadow': 'shadowArmyWindow',
-      'shadow army': 'shadowArmyWindow',
-      'shadows': 'shadowArmyWindow'
-    };
-    return windowMap[normalizedName];
-  },
-
-  addMicrophoneButton() {
-    const micButton = document.createElement("button");
-    micButton.id = "micButton";
-    micButton.innerHTML = '<i class="fas fa-microphone-slash"></i>';
-    micButton.title = "Say 'activate voice' to enable voice commands";
-    micButton.className = "mic-button";
-
-    // Add styles if not already present
-    if (!document.getElementById("micStyles")) {
-      const styleSheet = document.createElement("style");
-      styleSheet.id = "micStyles";
-      styleSheet.textContent = `
-        .mic-button {
-          position: fixed;
-          bottom: 54px;
-          right: 15px;
-          width: 50px;
-          height: 50px;
-          border-radius: 50%;
-          background: #1a1a1a;
-          border: 2px solid #0088ff;
-          color: #fff;
-          font-size: 17px;
-          cursor: pointer;
-          justify-content: center;
-          display: flex;
-          transition: all 0.3s ease;
-          align-items: center;
-          z-index: 9999;
-          box-shadow: 0 0 10px rgba(0, 136, 255, 0.3);
-          animation: float 2s ease-in-out infinite;
-          opacity: 0.5;
-        }
-        .mic-button.activated {
-          opacity: 1;
-          border-color: #00ff88;
-          background: #1a1a1a;
-        }
-        @keyframes float {
-          0% { transform: translateY(0px); }
-          50% { transform: translateY(-5px); }
-          100% { transform: translateY(0px); }
-        }
-      `;
-      document.head.appendChild(styleSheet);
-    }
-
-    document.body.appendChild(micButton);
-    this.micButton = micButton;
-  },
-
-  findBestMatch(spokenCommand, availableCommands) {
-    let bestMatch = null;
-    let bestSimilarity = 0;
-    const threshold = 0.6; // Minimum similarity threshold
-
-    for (const command of availableCommands) {
-      // Remove the ! prefix for comparison
-      const cleanCommand = command.replace("!", "");
-      const similarity = this.similarity(spokenCommand, cleanCommand);
-
-      if (similarity > bestSimilarity && similarity >= threshold) {
-        bestSimilarity = similarity;
-        bestMatch = command;
-      }
-    }
-
-    return { command: bestMatch, similarity: bestSimilarity };
-  },
-
-  // Calculate Levenshtein distance between two strings
-  levenshteinDistance(str1, str2) {
-    const m = str1.length;
-    const n = str2.length;
-    const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
-
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        if (str1[i - 1] === str2[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1];
-        } else {
-          dp[i][j] = Math.min(
-            dp[i - 1][j - 1] + 1,
-            dp[i - 1][j] + 1,
-            dp[i][j - 1] + 1
-          );
-        }
-      }
-    }
-    return dp[m][n];
-  },
-
-  // Calculate similarity ratio between two strings
-  similarity(str1, str2) {
-    const maxLength = Math.max(str1.length, str2.length);
-    const distance = this.levenshteinDistance(str1, str2);
-    return (maxLength - distance) / maxLength;
-  },
-};
-
-// Initialize speech recognition system when the page loads
-document.addEventListener("DOMContentLoaded", () => {
-  console.log("Document loaded, initializing speech recognition...");
-  speechRecognitionSystem.init();
-});
 
 // Add touch event handling for windows
 function initializeTouchEvents() {
@@ -6746,6 +7374,7 @@ async function showRankProgress() {
     console.error("Error showing rank progress:", error);
     printToTerminal("Error showing rank progress: " + error.message, "error");
   }
+  
 }
 
 // Add function to check and update rank
@@ -6875,17 +7504,718 @@ async function handleBossBattleTimeout(playerRef, bossId, battle) {
 
     // Update UI
     updateStatusBar();
-    windowSystem.updateWindowContent("battleWindow");
-    
-    // Play penalty sound
-    handlePenalty();
+    windowSystem.updateWindowContent("BattleWindow");
   } catch (error) {
     console.error("Error handling boss battle timeout:", error);
   }
 }
 
+async function startBossBattle(args) {
+  if (!isAuthenticated) {
+    printToTerminal("You must !reawaken first.", "error");
+    return;
+  }
 
+  if (!args || args.length === 0) {
+    printToTerminal("Usage: !challenge <boss_id>", "warning");
+    printToTerminal("Example: !challenge step_master", "info");
+    return;
+  }
+
+  const bossId = args[0];
+  const boss = Object.values(BOSSES).find((b) => b.id === bossId);
+  if (!boss) {
+    printToTerminal("Invalid boss battle ID.", "error");
+    return;
+  }
+
+  try {
+    const playerRef = db.collection("players").doc(currentUser.uid);
+    const player = (await playerRef.get()).data();
+    const defeatCount = player.defeatedBosses?.[bossId] || 0;
+
+    // Calculate scaled target and rewards
+    const scaledTarget =
+      boss.baseTargetCount + defeatCount * boss.scaling.targetCount;
+    const scaledExp = boss.rewards.exp + defeatCount * boss.scaling.rewards.exp;
+    const scaledGold =
+      boss.rewards.gold + defeatCount * boss.scaling.rewards.gold;
+
+    // Start the battle
+    const now = new Date();
+    const endTime = new Date(now.getTime() + boss.timeLimit);
+
+    await playerRef
+      .collection("activeBattles")
+      .doc(bossId)
+      .set({
+        bossId,
+        bossName: boss.name,
+        currentCount: 0,
+        targetCount: scaledTarget,
+        startTime: firebase.firestore.Timestamp.fromDate(now),
+        endTime: firebase.firestore.Timestamp.fromDate(endTime),
+        completed: false,
+      });
+
+    printToTerminal(`\n🗡️ Boss Battle Started: ${boss.name}`, "success");
+    printToTerminal(`Target: ${scaledTarget} ${boss.metric}`, "info");
+    printToTerminal(`Time Limit: ${formatTimeLimit(boss.timeLimit)}`, "info");
+    printToTerminal(`\nRewards if victorious:`, "reward");
+    printToTerminal(`- ${scaledExp} XP`, "reward");
+    printToTerminal(`- ${scaledGold} Gold`, "reward");
+    printToTerminal(`- Title: ${boss.rewards.title}`, "reward");
+
+    windowSystem.updateWindowContent("BattleWindow");
+
+    audioSystem.playVoiceLine('BOSS_START');
+    printToTerminal(`Battle against ${boss.name} has begun!`, "system");
+  } catch (error) {
+    printToTerminal("Error starting boss battle: " + error.message, "error");
+  }
+}
 
 function calculateSellPrice(item) {
   return Math.floor(item.price * 0.5);
 }
+
+function showSoloInterface() {
+    const soloWindow = document.getElementById('soloInterfaceWindow');
+    soloWindow.style.display = 'block';
+}
+
+function closeSoloInterface() {
+    const soloWindow = document.getElementById('soloInterfaceWindow');
+    soloWindow.style.display = 'none';
+}
+
+class ThreeJSVisualizer {
+  constructor(analyzer) {
+      this.analyzer = analyzer;
+      this.isActive = false;
+      this.isProcessing = false;
+
+      // Scene setup
+      this.scene = new THREE.Scene();
+      this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      this.camera.position.z = 5;
+
+      // Renderer setup
+      this.renderer = new THREE.WebGLRenderer({ antialias: true });
+      this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.renderer.setPixelRatio(window.devicePixelRatio);
+      this.renderer.domElement.style.position = 'absolute';
+      this.renderer.domElement.style.top = '0';
+      this.renderer.domElement.style.left = '0';
+      this.renderer.domElement.style.width = '100%';
+      this.renderer.domElement.style.height = '100%';
+      this.renderer.domElement.style.zIndex = '-1'; // Place behind UI elements
+      const soloContainer = document.getElementById('soloContainer');
+      soloContainer.appendChild(this.renderer.domElement);
+
+      // Lighting
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
+      this.scene.add(ambientLight);
+      const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+      directionalLight.position.set(1, 1, 1);
+      this.scene.add(directionalLight);
+
+      // Sphere creation with increased detail
+      const geometry = new THREE.IcosahedronGeometry(2, 3); // Detail level 3 for more vertices
+      const material = new THREE.MeshPhongMaterial({
+          color: 0x03befc, // Default cyan color
+          specular: 0x666666,
+          shininess: 10,
+          transparent: true,
+          opacity: 0.5,
+          wireframe: false
+      });
+      this.sphere = new THREE.Mesh(geometry, material);
+
+      // Wireframe
+      const wireframeGeometry = new THREE.WireframeGeometry(geometry);
+      const wireframeMaterial = new THREE.LineBasicMaterial({
+          color: 0x03befc,
+          transparent: true,
+          opacity: 0.9
+      });
+      const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+      this.sphere.add(wireframe);
+      this.scene.add(this.sphere);
+
+      // Store original vertex positions
+      this.originalPositions = [];
+      const positions = geometry.attributes.position.array;
+      for (let i = 0; i < positions.length; i += 3) {
+          this.originalPositions.push({
+              x: positions[i],
+              y: positions[i + 1],
+              z: positions[i + 2]
+          });
+      }
+
+      // Audio data buffers
+      this.bufferLength = this.analyzer.frequencyBinCount;
+      this.dataArray = new Uint8Array(this.bufferLength);
+
+      // Bind and start animation
+      this.animate = this.animate.bind(this);
+      this.animate();
+
+      // Handle window resize
+      window.addEventListener('resize', () => {
+          const width = soloContainer.clientWidth;
+          const height = soloContainer.clientHeight;
+          this.renderer.setSize(width, height);
+          this.camera.aspect = width / height;
+          this.camera.updateProjectionMatrix();
+      });
+  }
+
+  setActiveMode(active) {
+      this.isActive = active;
+  }
+
+  setProcessingMode(isProcessing) {
+      this.isProcessing = isProcessing;
+      const color = isProcessing ? 0xffff00 : 0x03befc; // Yellow when processing, cyan otherwise
+      this.sphere.material.color.set(color);
+      if (this.sphere.children[0]) {
+          this.sphere.children[0].material.color.set(color);
+      }
+  }
+
+  updateWireframe() {
+      if (this.sphere.children.length > 0) {
+          this.sphere.remove(this.sphere.children[0]);
+      }
+      const wireframeGeometry = new THREE.WireframeGeometry(this.sphere.geometry);
+      const wireframeMaterial = new THREE.LineBasicMaterial({
+          color: this.sphere.material.color.getHex(),
+          transparent: true,
+          opacity: 0.9
+      });
+      const wireframe = new THREE.LineSegments(wireframeGeometry, wireframeMaterial);
+      this.sphere.add(wireframe);
+  }
+
+  animate() {
+    requestAnimationFrame(this.animate);
+
+    if (this.isActive) {
+        // Fetch frequency data
+        this.analyzer.getByteFrequencyData(this.dataArray);
+
+        // Calculate overall average for emissive intensity (unchanged)
+        let sum = 0;
+        for (let i = 0; i < this.bufferLength; i++) {
+            sum += this.dataArray[i];
+        }
+        const average = sum / this.bufferLength;
+
+        // Define frequency bands based on ranges
+        const sampleRate = this.analyzer.context.sampleRate; // e.g., 44100 Hz
+        const freqPerBin = sampleRate / this.analyzer.fftSize; // Frequency resolution per bin
+        const bassEndFreq = 300; // Hz
+        const midEndFreq = 3000; // Hz
+        const bassEndBin = Math.min(Math.floor(bassEndFreq / freqPerBin), this.bufferLength - 1);
+        const midEndBin = Math.min(Math.floor(midEndFreq / freqPerBin), this.bufferLength - 1);
+        const trebleEndBin = this.bufferLength - 1; // Up to Nyquist frequency
+
+        // Array to store band values
+        const bands = [0, 0, 0];
+
+        // Bass: 0 to bassEndBin
+        let bassSum = 0;
+        for (let j = 0; j <= bassEndBin; j++) {
+            bassSum += this.dataArray[j];
+        }
+        bands[0] = bassSum / (bassEndBin + 1) / 255; // Normalize to 0–1
+
+        // Mid: bassEndBin + 1 to midEndBin
+        let midSum = 0;
+        for (let j = bassEndBin + 1; j <= midEndBin; j++) {
+            midSum += this.dataArray[j];
+        }
+        bands[1] = midSum / (midEndBin - bassEndBin) / 255;
+
+        // Treble: midEndBin + 1 to trebleEndBin
+        let trebleSum = 0;
+        for (let j = midEndBin + 1; j <= trebleEndBin; j++) {
+            trebleSum += this.dataArray[j];
+        }
+        bands[2] = (trebleSum / (trebleEndBin - midEndBin) / 255) * 10;
+
+        // Optional: Log values for debugging
+        console.log(`Bass: ${bands[0]}, Mid: ${bands[1]}, Treble: ${bands[2]}`);
+
+        // Apply bands to sphere vertices (adjust sensitivity as needed)
+        const positionAttribute = this.sphere.geometry.attributes.position;
+        for (let i = 0; i < this.originalPositions.length; i++) {
+            const vertex = this.originalPositions[i];
+            const normalizedVertex = {
+                x: vertex.x / 2,
+                y: vertex.y / 2,
+                z: vertex.z / 2
+            };
+            let band;
+            const sensitivity = 0.2; // Adjust this value if needed
+            if (Math.abs(normalizedVertex.y) > 0.5) {
+                band = bands[2]; // Treble for poles
+            } else if (Math.abs(normalizedVertex.y) > 0.2) {
+                band = bands[1]; // Mid for middle latitudes
+            } else {
+                band = bands[0]; // Bass for equator
+            }
+            const scale = 1 + (band * sensitivity * 0.5);
+            positionAttribute.setXYZ(
+                i,
+                vertex.x * scale,
+                vertex.y * scale,
+                vertex.z * scale
+            );
+        }
+        positionAttribute.needsUpdate = true;
+
+        // Update wireframe and material (unchanged)
+        this.updateWireframe();
+        const intensity = Math.min(average / 128, 2);
+        this.sphere.material.emissive.setRGB(intensity * 0.2, intensity * 0.2, intensity * 0.2);
+    } else {
+        // Reset positions when inactive (unchanged)
+        const positionAttribute = this.sphere.geometry.attributes.position;
+        for (let i = 0; i < this.originalPositions.length; i++) {
+            const vertex = this.originalPositions[i];
+            positionAttribute.setXYZ(i, vertex.x, vertex.y, vertex.z);
+        }
+        positionAttribute.needsUpdate = true;
+        this.updateWireframe();
+        this.sphere.material.emissive.setRGB(0, 0, 0);
+    }
+
+    // Rotate sphere (unchanged)
+    this.sphere.rotation.y += 0.001;
+    this.sphere.rotation.x += 0.0007;
+
+    this.renderer.render(this.scene, this.camera);
+}
+}
+
+  // Main Application Controller
+  class SoloAISystem {
+    constructor() {
+        this.initialized = false;
+        this.listening = false;
+        this.processing = false;
+        this.conversation = [];
+        this.audioContext = null;
+        this.analyzer = null;
+        this.speechRecognition = null;
+        this.visualizer = null;
+
+        this.openRouterKey = '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';
+
+        this.initUI();
+        this.initialize();
+    }
+
+    initUI() {
+        this.elements = {
+            startListeningBtn: document.getElementById('startListening'),
+            stopListeningBtn: document.getElementById('stopListening'),
+            clearChatBtn: document.getElementById('clearChat'),
+            transcript: document.getElementById('transcript'),
+            listeningIndicator: document.getElementById('listeningIndicator'),
+            thinkingIndicator: document.getElementById('thinkingIndicator'),
+            systemStatus: document.getElementById('systemStatus'),
+            listeningStatus: document.getElementById('listeningStatus'),
+            processingStatus: document.getElementById('processingStatus'),
+        };
+
+        this.elements.startListeningBtn.addEventListener('click', () => this.startListening());
+        this.elements.stopListeningBtn.addEventListener('click', () => this.stopListening());
+    }
+
+    async initialize() {
+        this.updateDebug('system', 'Initializing Solo AI System...');
+
+        try {
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          this.analyzer = this.audioContext.createAnalyser();
+          this.analyzer.fftSize = 256;
+            this.updateDebug('system', 'Audio context initialized');
+        } catch (error) {
+            this.updateDebug('system', 'Error initializing audio context: ' + error.message);
+        }
+
+        this.visualizer = new ThreeJSVisualizer(this.analyzer);
+        this.updateDebug('system', 'Visualizer initialized');
+
+        if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            this.speechRecognition = new SpeechRecognition();
+            this.speechRecognition.continuous = true;
+            this.speechRecognition.interimResults = true;
+
+            this.speechRecognition.onstart = () => {
+                this.listening = true;
+                this.updateListeningUI(true);
+                this.updateDebug('speech', 'Speech recognition started');
+            };
+
+            this.speechRecognition.onend = () => {
+                if (this.listening) {
+                    this.speechRecognition.start();
+                    this.updateDebug('speech', 'Speech recognition restarted');
+                } else {
+                    this.updateListeningUI(false);
+                    this.updateDebug('speech', 'Speech recognition stopped');
+                }
+            };
+
+            this.speechRecognition.onresult = (event) => {
+                const result = event.results[event.results.length - 1];
+                if (result.isFinal) {
+                    const transcript = result[0].transcript.trim();
+                    if (transcript) {
+                        this.handleUserInput(transcript);
+                    }
+                }
+            };
+
+            this.speechRecognition.onerror = (event) => {
+                this.updateDebug('speech', 'Speech recognition error: ' + event.error);
+            };
+
+            this.updateDebug('speech', 'Speech recognition initialized');
+        } else {
+            this.updateDebug('speech', 'Speech recognition not supported in this browser');
+        }
+
+        this.addMessage('system', 'hi shono.');
+        this.speakResponse('hi shono.');
+
+        this.initialized = true;
+        this.updateDebug('system', 'SOLO AI System initialized and ready');
+    }
+    
+    startListening() {
+      if (!this.initialized) {
+        this.initialize();
+        return;
+      }
+      
+      if (this.speechRecognition) {
+        this.listening = true;
+        this.speechRecognition.start();
+        this.elements.startListeningBtn.style.display = 'none';
+        this.elements.stopListeningBtn.style.display = 'flex';
+        this.elements.listeningIndicator.classList.add('active');
+        this.elements.listeningStatus.classList.add('active');
+      }
+    }
+    
+    stopListening() {
+      if (this.speechRecognition) {
+        this.listening = false;
+        this.speechRecognition.stop();
+        this.elements.startListeningBtn.style.display = 'flex';
+        this.elements.stopListeningBtn.style.display = 'none';
+        this.elements.listeningIndicator.classList.remove('active');
+        this.elements.listeningStatus.classList.remove('active');
+      }
+    }
+    
+    updateListeningUI(isListening) {
+      this.elements.listeningStatus.className = isListening ? 'status-dot active' : 'status-dot inactive';
+      this.elements.listeningIndicator.classList.toggle('active', isListening);
+      this.elements.startListeningBtn.style.display = isListening ? 'none' : 'flex';
+      this.elements.stopListeningBtn.style.display = isListening ? 'flex' : 'none';
+    }
+    
+    updateProcessingUI(isProcessing) {
+      this.processing = isProcessing;
+      this.elements.processingStatus.className = isProcessing ? 'status-dot active' : 'status-dot inactive';
+      this.elements.thinkingIndicator.classList.toggle('active', isProcessing);
+      this.visualizer.setProcessingMode(isProcessing);
+    }
+    
+    async handleUserInput(text) {
+      if (this.processing) return;
+    
+      this.addMessage('user', text);
+
+    
+      this.updateProcessingUI(true);
+    
+      try {
+        // Call DeepSeek API to get response
+        this.updateDebug('api', 'Sending request to DeepSeek API via OpenRouter...');
+        let response = await this.callDeepSeekAPI(text);
+        this.updateDebug('api', 'Response received from DeepSeek API');
+    
+        // Remove asterisks from response
+        response = response.replace(/\*/g, '');
+    
+        // Add AI response to conversation
+        this.addMessage('ai', response);
+    
+        // Speak the response
+        await this.speakResponse(response);
+      } catch (error) {
+        this.updateDebug('api', 'Error getting response: ' + error.message);
+        this.addMessage('system', 'Sorry, I encountered an error processing your request.');
+      } finally {
+        this.updateProcessingUI(false);
+      }
+    }
+    
+    
+    async callDeepSeekAPI(text) {
+      try {
+        const conversationHistory = this.formatConversationForDeepSeek();
+        conversationHistory.push({
+          role: 'user',
+          content: text
+        });
+
+        const url = 'https://openrouter.ai/api/v1/chat/completions';
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.openRouterKey}`,
+            'HTTP-Referer': 'http://localhost', // Replace with your site URL if hosted
+            'X-Title': 'SOLO AI System', // Optional title for OpenRouter rankings
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'deepseek/deepseek-chat:free',
+            messages: conversationHistory,
+            max_tokens: 250, // Adjust as needed
+            temperature: 0.7,
+            top_p: 0.9
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`API request failed with status ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        // Extract response from DeepSeek API
+        if (result && result.choices && result.choices[0] && result.choices[0].message) {
+          return result.choices[0].message.content.trim();
+        } else {
+          console.error('Unexpected API response format:', result);
+          return "I'm processing your request. The SOLO AI System is actively analyzing the information.";
+        }
+      } catch (error) {
+        console.error('Error calling DeepSeek API:', error);
+        return "I'm experiencing some connection issues. Please try again in a moment.";
+      }
+    }
+    
+
+    formatConversationForDeepSeek() {
+      // Format conversation history for DeepSeek
+      const formattedConversation = [];
+      
+      // System prompt with instructions for structured JSON responses
+      formattedConversation.push({
+        role: 'system',
+        content: `You are SOLO, an AI assistant for a fitness and well-being app inspired by Solo Leveling. Players can ask you to manage their quests. Respond to requests in a JSON format with this structure:
+
+{
+  "intent": "add_daily_quest" | "complete_all_daily_quests" | "delete_quest" | "read_quests" | etc.,
+  "details": {
+    "title": string, // for add_daily_quest
+    "questId": string, // for delete_quest, etc.
+    // Add other fields as needed
+  }
+}
+
+If the request is unclear, respond with:
+
+{
+  "intent": "unknown",
+  "message": "I didn't understand that command, player."
+}
+
+Keep responses short and concise, and address the user as "player".`
+      });
+      
+      // Add recent conversation history
+      const recentConversation = this.conversation.slice(-10);
+      for (const msg of recentConversation) {
+        if (msg.type === 'user') {
+          formattedConversation.push({
+            role: 'user',
+            content: msg.text
+          });
+        } else if (msg.type === 'ai') {
+          formattedConversation.push({
+            role: 'assistant',
+            content: msg.text
+          });
+        }
+      }
+      return formattedConversation;
+    }
+    
+    async handleIntent(responseData) {
+      if (!isAuthenticated) {
+        this.addMessage('system', 'You must !reawaken first, player.');
+        this.speakResponse('You must !reawaken first, player.');
+        return;
+      }
+  
+      switch (responseData.intent) {
+        case 'add_daily_quest':
+          const title = responseData.details?.title;
+          if (title) {
+            await this.addDailyQuest(title);
+            this.addMessage('ai', `Added new daily quest: ${title}, player.`);
+            this.speakResponse(`Added new daily quest: ${title}, player.`);
+          } else {
+            this.addMessage('ai', 'Please provide a title for the quest, player.');
+            this.speakResponse('Please provide a title for the quest, player.');
+          }
+          break;
+  
+        case 'complete_all_daily_quests':
+          await this.completeAllDailyQuests();
+          this.addMessage('ai', 'All daily quests completed, player.');
+          this.speakResponse('All daily quests completed, player.');
+          break;
+  
+        case 'delete_quest':
+          const questId = responseData.details?.questId;
+          if (questId) {
+            await deleteQuest(questId, 'daily'); // Assuming daily quests for now
+            this.addMessage('ai', `Deleted quest with ID ${questId}, player.`);
+            this.speakResponse(`Deleted quest with ID ${questId}, player.`);
+          } else {
+            this.addMessage('ai', 'Please provide a quest ID to delete, player.');
+            this.speakResponse('Please provide a quest ID to delete, player.');
+          }
+          break;
+  
+        case 'read_quests':
+          await this.readDailyQuests();
+          break;
+  
+        case 'unknown':
+          this.addMessage('ai', responseData.message);
+          this.speakResponse(responseData.message);
+          break;
+  
+        default:
+          this.addMessage('ai', 'I’m not sure how to handle that, player.');
+          this.speakResponse('I’m not sure how to handle that, player.');
+      }
+    }
+    
+
+    
+    async speakResponse(text) {
+      try {
+          this.updateDebug('audio', 'Requesting speech from Azure TTS API...');
+          
+          const tokenResponse = await fetch(`https://eastus.api.cognitive.microsoft.com/sts/v1.0/issuetoken`, {
+              method: 'POST',
+              headers: {
+                  'Ocp-Apim-Subscription-Key': 'FANcfK9JLli9bfNboMTIVRIhY3a6BJJf1ifjGP4gUwylRN00Bez0JQQJ99BCACYeBjFXJ3w3AAAYACOG4YgF'
+              }
+          });
+
+          if (!tokenResponse.ok) {
+              throw new Error(`Failed to get token: ${tokenResponse.status}`);
+          }
+
+          const accessToken = await tokenResponse.text();
+          const ttsUrl = `https://eastus.tts.speech.microsoft.com/cognitiveservices/v1`;
+          
+          const audioResponse = await fetch(ttsUrl, {
+              method: 'POST',
+              headers: {
+                  'Authorization': `Bearer ${accessToken}`,
+                  'Content-Type': 'application/ssml+xml',
+                  'X-Microsoft-OutputFormat': 'audio-16khz-32kbitrate-mono-mp3'
+              },
+              body: `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
+                        <voice name='en-US-AriaNeural'>${text}</voice>
+                      </speak>`
+          });
+
+          if (!audioResponse.ok) {
+              throw new Error(`Azure TTS request failed with status ${audioResponse.status}`);
+          }
+
+          const audioBlob = await audioResponse.blob();
+          this.updateDebug('audio', 'Speech generated successfully');
+          
+          const audioUrl = URL.createObjectURL(audioBlob);
+          const audio = new Audio(audioUrl);
+          
+          if (this.audioContext && this.analyzer) {
+            const source = this.audioContext.createMediaElementSource(audio);
+            source.connect(this.analyzer);
+            this.analyzer.connect(this.audioContext.destination);
+        }
+          
+          audio.addEventListener('play', () => {
+              this.updateDebug('audio', 'Playing audio response');
+              this.visualizer.setActiveMode(true);
+          });
+          
+          audio.addEventListener('ended', () => {
+              this.updateDebug('audio', 'Audio playback complete');
+              this.visualizer.setActiveMode(false);
+          });
+          
+          await audio.play();
+      } catch (error) {
+          this.updateDebug('audio', 'Error generating or playing speech: ' + error.message);
+          console.error('Speech synthesis error:', error);
+      }
+  }
+
+  addMessage(type, text) {
+      this.conversation.push({ type, text });
+      
+      const messageElement = document.createElement('div');
+      messageElement.style.marginBottom = '10px';
+      
+      if (type === 'user') {
+          messageElement.innerHTML = `<strong>You:</strong> ${text}`;
+      } else if (type === 'ai') {
+          messageElement.innerHTML = `<strong>AI:</strong> ${text}`;
+      } else {
+          messageElement.innerHTML = `<strong>System:</strong> ${text}`;
+      }
+      
+      this.elements.transcript.appendChild(messageElement);
+      this.elements.transcript.scrollTop = this.elements.transcript.scrollHeight;
+  }
+
+  updateDebug(section, message) {
+      const debugMap = {
+          system: document.getElementById('debugSystem'),
+          speech: document.getElementById('debugSpeech'),
+          api: document.getElementById('debugAPI'),
+          audio: document.getElementById('debugAudio')
+      };
+      if (debugMap[section]) {
+          debugMap[section].textContent = message;
+      }
+      console.log(`[DEBUG - ${section}]: ${message}`);
+  }
+}
+
+  
+  // Instantiate the system
+  const soloAISystem = new SoloAISystem();
+
+ 
