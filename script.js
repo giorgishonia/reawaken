@@ -7813,7 +7813,7 @@ class ThreeJSVisualizer {
         this.speechRecognition = null;
         this.visualizer = null;
 
-        this.openRouterKey = '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';
+        this.openRouterKey = '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';
 
         this.initUI();
         this.initialize();
@@ -8025,25 +8025,8 @@ class ThreeJSVisualizer {
       // System prompt with instructions for structured JSON responses
       formattedConversation.push({
         role: 'system',
-        content: `You are SOLO, an AI assistant for a fitness and well-being app inspired by Solo Leveling. Players can ask you to manage their quests. Respond to requests in a JSON format with this structure:
+        content: `You are SOLO, an AI assistant for a fitness and well-being app inspired by Solo Leveling. Players can ask you to manage their quests.`
 
-{
-  "intent": "add_daily_quest" | "complete_all_daily_quests" | "delete_quest" | "read_quests" | etc.,
-  "details": {
-    "title": string, // for add_daily_quest
-    "questId": string, // for delete_quest, etc.
-    // Add other fields as needed
-  }
-}
-
-If the request is unclear, respond with:
-
-{
-  "intent": "unknown",
-  "message": "I didn't understand that command, player."
-}
-
-Keep responses short and concise, and address the user as "player".`
       });
       
       // Add recent conversation history
