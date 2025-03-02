@@ -1,12 +1,11 @@
-// Initialize Firebase
 const firebaseConfig = {
-  apiKey: "AIzaSyAEpfs-P81k4vagCAPlrW_qOXEysllMjGg",
-  authDomain: "reawakening-fe981.firebaseapp.com",
-  projectId: "reawakening-fe981",
-  storageBucket: "reawakening-fe981.firebasestorage.app",
-  messagingSenderId: "310750239922",
-  appId: "1:310750239922:web:cdfb7c87f2e05c52553dab",
-  measurementId: "G-WLY0K1N1TG",
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -7747,7 +7746,6 @@ class ThreeJSVisualizer {
         bands[2] = (trebleSum / (trebleEndBin - midEndBin) / 255) * 10;
 
         // Optional: Log values for debugging
-        console.log(`Bass: ${bands[0]}, Mid: ${bands[1]}, Treble: ${bands[2]}`);
 
         // Apply bands to sphere vertices (adjust sensitivity as needed)
         const positionAttribute = this.sphere.geometry.attributes.position;
@@ -7813,7 +7811,7 @@ class ThreeJSVisualizer {
         this.speechRecognition = null;
         this.visualizer = null;
 
-        this.openRouterKey = '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';
+        this.openRouterKey = process.env.OPENROUTER_API_KEY;
 
         this.initUI();
         this.initialize();
@@ -8109,7 +8107,7 @@ class ThreeJSVisualizer {
           const tokenResponse = await fetch(`https://eastus.api.cognitive.microsoft.com/sts/v1.0/issuetoken`, {
               method: 'POST',
               headers: {
-                  'Ocp-Apim-Subscription-Key': 'FANcfK9JLli9bfNboMTIVRIhY3a6BJJf1ifjGP4gUwylRN00Bez0JQQJ99BCACYeBjFXJ3w3AAAYACOG4YgF'
+                  'Ocp-Apim-Subscription-Key': 'process.env.APIM_SUB_KEY;'
               }
           });
 
@@ -8193,7 +8191,6 @@ class ThreeJSVisualizer {
       if (debugMap[section]) {
           debugMap[section].textContent = message;
       }
-      console.log(`[DEBUG - ${section}]: ${message}`);
   }
 }
 
